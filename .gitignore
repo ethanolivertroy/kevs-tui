@@ -44,3 +44,6 @@ Thumbs.db
 # Local env files
 .env
 .env.local
+
+# Agent instructions
+AGENTS.md

@@ -246,6 +246,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "s":
 				m.sortMode = (m.sortMode + 1) % 4
 				m.applySortAndFilter()
+				m.list.SetItems(m.filteredVulns)
 				m.statusMsg = fmt.Sprintf("Sorted by: %s", m.sortMode.String())
 				return m, nil
 			case "r":
@@ -257,6 +258,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.statusMsg = "Showing ransomware only"
 				}
 				m.applySortAndFilter()
+				m.list.SetItems(m.filteredVulns)
 				return m, nil
 			case "d":
 				if m.filterMode == FilterOverdue {
@@ -267,6 +269,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.statusMsg = "Showing overdue only"
 				}
 				m.applySortAndFilter()
+				m.list.SetItems(m.filteredVulns)
 				return m, nil
 			case "o":
 				if item, ok := m.list.SelectedItem().(model.VulnerabilityItem); ok {
@@ -283,6 +286,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "g":
 				m.selectedChartIndex = 0
 				m.view = ViewChartsMenu
+				return m, nil
+			case "G":
+				// Jump to end of list (vim style)
+				if len(m.list.Items()) > 0 {
+					m.list.Select(len(m.list.Items()) - 1)
+				}
+				return m, nil
+			case "home", "t":
+				// Jump to start of list
+				m.list.Select(0)
+				return m, nil
+			case "end", "b":
+				// Jump to end of list
+				if len(m.list.Items()) > 0 {
+					m.list.Select(len(m.list.Items()) - 1)
+				}
 				return m, nil
 			case "x":
 				m.selectedExportIndex = 0
@@ -816,7 +835,7 @@ func (m Model) renderListView() string {
 	if m.showHelp {
 		b.WriteString(m.help.View(m.keys))
 	} else {
-		helpText := "/ filter • s sort • r ransomware • d overdue • g graphs • x export • o open • c copy • q quit"
+		helpText := "/ filter • s sort • r ransomware • d overdue • g graphs • x export • t top • b bottom • q quit"
 		b.WriteString(SubtitleStyle.Render(helpText))
 	}
 

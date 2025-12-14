@@ -49,6 +49,8 @@ kev
 | `d` | Toggle overdue filter |
 | `o` | Open NVD URL in browser |
 | `c` | Copy CVE ID to clipboard |
+| `t` | Jump to top |
+| `b` | Jump to bottom |
 | `q` | Quit |
 
 ## Data Sources

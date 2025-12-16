@@ -1,0 +1,50 @@
+# Binaries
+kevs-tui
+kevs-tui.exe
+kev
+kev.exe
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Build output
+dist/
+build/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.out
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Local env files
+.env
+.env.local
+
+# Demo source files (keep demo.gif for README)
+demo.tape
+demo.mp4

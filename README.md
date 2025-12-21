@@ -1,5 +1,13 @@
 # CISA KEV TUI
 
+![Go Version](https://img.shields.io/badge/go-1.25.5-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Go Report Card](https://goreportcard.com/badge/github.com/ethanolivertroy/kevs-tui)
+![GitHub Release](https://img.shields.io/github/release/ethanolivertroy/kevs-tui.svg)
+![Tests](https://github.com/ethanolivertroy/kevs-tui/workflows/Test/badge.svg)
+![Lint](https://github.com/ethanolivertroy/kevs-tui/workflows/Lint/badge.svg)
+![Coverage](https://codecov.io/gh/ethanolivertroy/kevs-tui/branch/main/graph/badge.svg)
+
 Terminal UI for searching CISA Known Exploited Vulnerabilities (KEV) catalog with EPSS exploit probability scores.
 
 ![Demo](demo.gif)
@@ -62,4 +70,4 @@ kev
 
 ## License
 
-MIT
+[MIT](LICENSE)

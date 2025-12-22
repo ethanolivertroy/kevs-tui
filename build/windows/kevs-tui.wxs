@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="kevs-tui"
+    UpgradeCode="A1B2C3D4-5678-90AB-CDEF-1234567890AB"
+    Language="1033"
+    Codepage="1252"
+    Version="{{.Version}}"
+    Manufacturer="ethanolivertroy"
+    InstallerVersion="200"
+    ProductCode="*">
+
+    <SummaryInformation
+      Keywords="Installer"
+      Description="CISA KEV TUI - Terminal UI for browsing Known Exploited Vulnerabilities"
+      Manufacturer="ethanolivertroy" />
+
+    <Media Id="1" Cabinet="kevstui.cab" EmbedCab="yes" />
+
+    <Feature Id="Complete" Level="1">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="PathEntry" />
+    </Feature>
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLDIR" Name="kevs-tui">
+        <Component Id="MainExecutable" Guid="B2C3D4E5-6789-0ABC-DEF1-234567890ABC">
+          <File
+            Id="kevstui_exe"
+            Name="kevs-tui.exe"
+            Source="kevs-tui.exe"
+            KeyPath="yes" />
+        </Component>
+        <Component Id="PathEntry" Guid="C3D4E5F6-7890-ABCD-EF12-34567890ABCD">
+          <Environment
+            Id="PATH"
+            Name="PATH"
+            Value="[INSTALLDIR]"
+            Permanent="no"
+            Part="last"
+            Action="set"
+            System="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+  </Package>
+</Wix>

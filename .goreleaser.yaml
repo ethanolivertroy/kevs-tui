@@ -68,3 +68,33 @@ scoops:
     homepage: "https://github.com/ethanolivertroy/kevs-tui"
     description: "Terminal UI for browsing CISA Known Exploited Vulnerabilities (KEV)"
     license: "MIT"
+
+# MSI Installers (Pro feature)
+msi:
+  - id: kevs-tui-msi
+    wxs: build/windows/kevs-tui.wxs
+    name: "kevs-tui-{{.Version}}-{{.Arch}}"
+    version: v4
+
+# Winget manifests (Pro feature)
+winget:
+  - name: kevs-tui
+    publisher: ethanolivertroy
+    short_description: "Terminal UI for browsing CISA Known Exploited Vulnerabilities"
+    license: MIT
+    publisher_url: https://github.com/ethanolivertroy
+    homepage: https://github.com/ethanolivertroy/kevs-tui
+    tags:
+      - security
+      - vulnerability
+      - cisa
+      - kev
+      - tui
+      - terminal
+    repository:
+      owner: ethanolivertroy
+      name: winget-pkgs
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com

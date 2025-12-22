@@ -74,7 +74,7 @@ msi:
   - id: kevs-tui-msi
     wxs: build/windows/kevs-tui.wxs
     name: "kevs-tui-{{.Version}}-{{.Arch}}"
-    version: v4
+    version: v3
 
 # Winget manifests (Pro feature)
 winget:

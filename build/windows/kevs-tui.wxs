@@ -15,7 +15,6 @@
         <Directory Id="INSTALLDIR" Name="kevs-tui">
           <Component Id="MainExecutable" Guid="B2C3D4E5-6789-0ABC-DEF1-234567890ABC">
             <File Id="kevstui_exe" Name="kevs-tui.exe" Source="kevs-tui.exe" KeyPath="yes" />
-            <Environment Id="PATH" Name="PATH" Value="[INSTALLDIR]" Permanent="no" Part="last" Action="set" System="yes" />
           </Component>
         </Directory>
       </Directory>

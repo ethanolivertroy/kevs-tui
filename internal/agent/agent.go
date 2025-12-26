@@ -3,22 +3,18 @@ package agent
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/ethanolivertroy/kevs-tui/internal/llm"
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
-	"google.golang.org/adk/model/gemini"
 	"google.golang.org/adk/runner"
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 )
 
 const (
-	// DefaultModel is the default Gemini model to use
-	DefaultModel = "gemini-2.0-flash"
-
 	// SystemInstruction for KEVin
 	SystemInstruction = `You are KEVin, a security expert for the CISA Known Exploited Vulnerabilities (KEV) catalog.
 
@@ -34,7 +30,7 @@ Examples of how to handle queries:
 - "any ransomware CVEs?" → list_ransomware_cves() immediately
 - "CVE-2024-1234" → get_cve_details(cve_id="CVE-2024-1234") immediately
 
-Your tools:
+Your KEV tools:
 - search_kevs: Search by keyword, vendor, or product
 - get_cve_details: Get detailed info about a specific CVE
 - list_ransomware_cves: List CVEs used in ransomware campaigns
@@ -42,11 +38,27 @@ Your tools:
 - get_stats: Get KEV catalog statistics
 - export_report: Export to JSON/CSV/Markdown
 
+Your GRC Compliance tools:
+- map_cve_to_controls: Map a CVE to NIST 800-53 or FedRAMP controls
+- get_control_details: Get details about a specific security control (e.g., SI-2, RA-5)
+- list_controls: List available security controls by family
+
 When presenting results:
 - Lead with the data, keep explanations brief
 - Include EPSS scores when available (higher = more likely exploited)
 - Highlight ransomware association and overdue status
 - Use markdown for clarity
+
+When presenting GRC mappings:
+- Explain why each control applies based on the rationale
+- Highlight P1 (highest priority) controls
+- Note FedRAMP baseline levels when relevant
+- Suggest remediation actions based on control requirements
+
+Examples for GRC queries:
+- "what controls apply to CVE-2024-1234?" → map_cve_to_controls immediately
+- "explain SI-2" → get_control_details immediately
+- "show incident response controls" → list_controls with family filter
 
 Only redirect to KEV topics if the query is completely unrelated to security.`
 )
@@ -62,32 +74,42 @@ type KEVAgent struct {
 	hasSession bool
 }
 
-// New creates a new KEV agent
+// New creates a new KEV agent using default LLM config from environment
 func New(ctx context.Context) (*KEVAgent, error) {
-	// Check for API key
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		return nil, fmt.Errorf("GEMINI_API_KEY environment variable is required")
+	cfg := llm.ConfigFromEnv()
+	return NewWithConfig(ctx, cfg)
+}
+
+// NewWithConfig creates a new KEV agent with the specified LLM config
+func NewWithConfig(ctx context.Context, cfg llm.Config) (*KEVAgent, error) {
+	// Validate config
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 
-	// Create the Gemini model
-	model, err := gemini.NewModel(ctx, DefaultModel, &genai.ClientConfig{
-		APIKey: apiKey,
-	})
+	// Create the LLM model
+	model, err := llm.NewModel(ctx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Gemini model: %w", err)
+		return nil, fmt.Errorf("failed to create LLM model: %w", err)
 	}
 
-	// Create the tools
+	// Create the KEV tools
 	tools, err := CreateTools()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tools: %w", err)
 	}
 
+	// Create the GRC tools
+	grcTools, err := CreateGRCTools()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GRC tools: %w", err)
+	}
+	tools = append(tools, grcTools...)
+
 	// Create the LLM agent
 	kevAgent, err := llmagent.New(llmagent.Config{
 		Name:        "kev_agent",
-		Description: "Security analyst assistant for querying the CISA KEV catalog",
+		Description: "Security analyst assistant for querying the CISA KEV catalog with GRC control mapping",
 		Model:       model,
 		Instruction: SystemInstruction,
 		Tools:       tools,
@@ -114,6 +136,11 @@ func New(ctx context.Context) (*KEVAgent, error) {
 		runner:         r,
 		sessionService: sessionSvc,
 	}, nil
+}
+
+// Agent returns the underlying ADK agent for use with launchers
+func (a *KEVAgent) Agent() agent.Agent {
+	return a.agent
 }
 
 // Query sends a query to the agent and returns the response

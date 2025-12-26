@@ -307,6 +307,9 @@ func (m AppModel) renderLoading() string {
 func main() {
 	agentMode := flag.Bool("agent", false, "Start in agent-only mode")
 	agentShort := flag.Bool("a", false, "Start in agent-only mode (shorthand)")
+	serveMode := flag.Bool("serve", false, "Start A2A server mode")
+	serveShort := flag.Bool("s", false, "Start A2A server mode (shorthand)")
+	port := flag.Int("port", 8001, "Port for A2A server")
 	version := flag.Bool("version", false, "Print version and exit")
 	help := flag.Bool("help", false, "Print help and exit")
 	flag.BoolVar(help, "h", false, "Print help and exit (shorthand)")
@@ -320,19 +323,26 @@ Usage:
 Modes:
   Default     KEV browser with KEVin AI sidebar
   Agent       Chat with KEVin AI only
+  Serve       Run as A2A server
 
 Flags:
-  -a, --agent     Start in agent-only mode (requires GEMINI_API_KEY)
-  -h, --help      Print this help message
-      --version   Print version information
+  -a, --agent       Start in agent-only mode (requires LLM_PROVIDER config)
+  -s, --serve       Start A2A server mode
+      --port        Port for A2A server (default: 8001)
+  -h, --help        Print this help message
+      --version     Print version information
 
 Examples:
   kevs-tui                           # Browser with agent sidebar
   kevs-tui --agent                   # Agent-only mode
   kevs-tui -a "Microsoft vulns"      # One-shot query
+  kevs-tui --serve --port 8001       # Start A2A server
 
 Environment:
-  GEMINI_API_KEY  Required for KEVin agent
+  LLM_PROVIDER      LLM provider: gemini (default) or ollama
+  LLM_MODEL         Model name (e.g., gemini-2.0-flash, llama3.2)
+  GEMINI_API_KEY    Required for Gemini provider
+  OLLAMA_URL        Ollama server URL (default: http://localhost:11434)
 
 Keyboard:
   Tab     Switch focus between panels
@@ -353,6 +363,16 @@ Keyboard:
 		os.Exit(0)
 	}
 
+	// Serve mode - A2A server
+	if *serveMode || *serveShort {
+		if err := cmd.RunServe(*port); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Agent mode
 	if *agentMode || *agentShort {
 		args := flag.Args()
 		if err := cmd.RunAgent(args); err != nil {

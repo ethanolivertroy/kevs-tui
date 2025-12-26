@@ -3,26 +3,34 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ethanolivertroy/kevs-tui/internal/agent"
 	"github.com/ethanolivertroy/kevs-tui/internal/chat"
+	"github.com/ethanolivertroy/kevs-tui/internal/llm"
 )
 
 // RunAgent runs the agent mode - interactive TUI if no args, one-shot if query provided
 func RunAgent(args []string) error {
-	// Check for API key early
-	if os.Getenv("GEMINI_API_KEY") == "" {
-		return fmt.Errorf("GEMINI_API_KEY environment variable is required for agent mode\n\nSet it with:\n  export GEMINI_API_KEY=your-api-key")
+	// Validate LLM config
+	cfg := llm.ConfigFromEnv()
+	if err := cfg.Validate(); err != nil {
+		provider := cfg.Provider
+		if provider == "" {
+			provider = "gemini"
+		}
+		if provider == "gemini" {
+			return fmt.Errorf("LLM configuration error: %w\n\nFor Gemini, set:\n  export GEMINI_API_KEY=your-api-key\n\nFor Ollama (local), set:\n  export LLM_PROVIDER=ollama", err)
+		}
+		return fmt.Errorf("LLM configuration error: %w", err)
 	}
 
 	ctx := context.Background()
 
 	// Create the agent
-	fmt.Println("Initializing KEV agent...")
-	kevAgent, err := agent.New(ctx)
+	fmt.Printf("Initializing KEVin agent (%s/%s)...\n", cfg.Provider, cfg.Model)
+	kevAgent, err := agent.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to initialize agent: %w", err)
 	}

@@ -44,6 +44,65 @@ kev
 - **Copy to Clipboard** - Quick copy CVE IDs
 - **Scrollable Detail View** - Navigate long descriptions with keyboard/mouse
 - **Visual Indicators** - Color-coded EPSS bars, overdue badges, ransomware flags
+- **KEVin AI Agent** - Natural language queries with GRC control mapping
+
+## KEVin AI Agent
+
+KEVin is an AI-powered agent that lets you query the KEV catalog using natural language and map vulnerabilities to security controls (NIST 800-53, FedRAMP).
+
+### Quick Start
+
+```bash
+# Interactive chat mode
+kevs-tui agent
+
+# One-shot query
+kevs-tui agent "show me critical Microsoft vulnerabilities with ransomware"
+```
+
+### LLM Provider Configuration
+
+KEVin supports multiple LLM providers. Set `LLM_PROVIDER` and the required API key:
+
+| Provider | `LLM_PROVIDER` | Required Env Var | Default Model |
+|----------|----------------|------------------|---------------|
+| Google Gemini | `gemini` | `GEMINI_API_KEY` | `gemini-2.0-flash` |
+| Vertex AI | `vertex` | `VERTEX_PROJECT`, `VERTEX_LOCATION` | `gemini-2.0-flash` |
+| Ollama (local) | `ollama` | `OLLAMA_URL` (optional) | `llama3.2` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4` |
+
+#### Examples
+
+**Google Gemini (default):**
+```bash
+export GEMINI_API_KEY=your-api-key
+kevs-tui agent
+```
+
+**OpenRouter (access Claude, GPT-4, Llama, etc.):**
+```bash
+export LLM_PROVIDER=openrouter
+export OPENROUTER_API_KEY=sk-or-v1-xxxxx
+export LLM_MODEL=anthropic/claude-sonnet-4  # optional, this is the default
+kevs-tui agent
+```
+
+**Ollama (local, no API key needed):**
+```bash
+export LLM_PROVIDER=ollama
+export LLM_MODEL=llama3.2
+kevs-tui agent
+```
+
+### Agent Capabilities
+
+- **Search KEVs** - Find vulnerabilities by keyword, vendor, product
+- **Get CVE Details** - Detailed info including EPSS scores
+- **List Ransomware CVEs** - Filter to ransomware-associated vulnerabilities
+- **List Overdue CVEs** - Find past-due remediation items
+- **Get Statistics** - Catalog overview with top vendors and CWEs
+- **Export Reports** - Generate JSON, CSV, or Markdown reports
+- **Map to Controls** - Map CVEs to NIST 800-53 or FedRAMP controls
 
 ## Keys
 

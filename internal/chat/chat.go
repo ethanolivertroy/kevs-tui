@@ -148,14 +148,34 @@ Commands: /help /clear /exit | Ctrl+P for command palette`,
 		{Name: "Exit Chat", Key: "esc", Action: "exit"},
 	}
 
-	return Model{
+	// Default dimensions - will be updated on WindowSizeMsg
+	defaultWidth := 80
+	defaultHeight := 24
+	headerHeight := 3
+	footerHeight := 5
+	viewportHeight := defaultHeight - headerHeight - footerHeight
+
+	// Create viewport upfront so TUI renders immediately
+	vp := viewport.New(defaultWidth-4, viewportHeight)
+	vp.HighPerformanceRendering = false
+
+	m := Model{
 		ctx:       ctx,
 		agent:     kevAgent,
 		textInput: ti,
+		viewport:  vp,
 		spinner:   s,
 		messages:  []ChatMessage{welcomeMsg},
 		palette:   palette.New(paletteCommands),
+		width:     defaultWidth,
+		height:    defaultHeight,
+		ready:     true, // Start ready immediately
 	}
+
+	// Initialize viewport content with welcome message
+	m.updateViewportContent()
+
+	return m
 }
 
 // Init initializes the chat model
@@ -233,30 +253,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "pgup", "pgdown", "ctrl+u", "ctrl+d":
 			// Scroll viewport
-			if m.ready {
-				var cmd tea.Cmd
-				m.viewport, cmd = m.viewport.Update(msg)
-				return m, cmd
-			}
+			var cmd tea.Cmd
+			m.viewport, cmd = m.viewport.Update(msg)
+			return m, cmd
 		}
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 
-		headerHeight := 3  // Title
-		footerHeight := 5  // Input + help + dividers
+		headerHeight := 3 // Title
+		footerHeight := 5 // Input + help + dividers
 		viewportHeight := m.height - headerHeight - footerHeight
 
-		if !m.ready {
-			m.viewport = viewport.New(m.width-4, viewportHeight)
-			m.viewport.HighPerformanceRendering = false
-			m.ready = true
-		} else {
-			m.viewport.Width = m.width - 4
-			m.viewport.Height = viewportHeight
-		}
-
+		// Update viewport dimensions
+		m.viewport.Width = m.width - 4
+		m.viewport.Height = viewportHeight
 		m.textInput.Width = m.width - 6
 		m.updateViewportContent()
 		return m, nil

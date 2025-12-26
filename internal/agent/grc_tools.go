@@ -38,7 +38,7 @@ type GetControlParams struct {
 
 // GetControlResult for get_control_details tool
 type GetControlResult struct {
-	Found   bool                 `json:"found"`
+	Found   bool                `json:"found"`
 	Control grc.SecurityControl `json:"control,omitempty"`
 }
 
@@ -50,7 +50,7 @@ type ListControlsParams struct {
 
 // ListControlsResult for list_controls tool
 type ListControlsResult struct {
-	Count    int                    `json:"count"`
+	Count    int                   `json:"count"`
 	Controls []grc.SecurityControl `json:"controls"`
 }
 

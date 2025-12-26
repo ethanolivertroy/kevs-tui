@@ -69,8 +69,8 @@ type KEVAgent struct {
 	runner         *runner.Runner
 	sessionService session.Service
 	// Session tracking for multi-turn conversations
-	userID    string
-	sessionID string
+	userID     string
+	sessionID  string
 	hasSession bool
 }
 

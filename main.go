@@ -17,10 +17,11 @@ import (
 
 // Layout constants (Crush-style)
 const (
-	AgentPanelWidth    = 45  // Fixed width for agent sidebar
-	CompactBreakpoint  = 100 // Below this width, hide agent panel
-	HeaderHeight       = 1
-	MouseThrottleMs    = 15
+	AgentPanelWidth     = 45  // Fixed width for agent sidebar
+	CompactBreakpoint   = 100 // Below this width, hide agent panel
+	BrowserHeaderHeight = 0   // No separate header - TUI list has its own title
+	AgentHeaderHeight   = 0   // No separate header - chat model has its own title
+	MouseThrottleMs     = 15
 )
 
 // Panel types for focus management
@@ -53,7 +54,8 @@ type AppModel struct {
 	agentInitialized bool
 	agentError       string
 	focusedPanel     PanelType
-	compact          bool // Hide agent panel in compact mode
+	compact          bool // Hide agent panel in compact mode (window too narrow)
+	agentVisible     bool // User-controlled visibility (toggle with \)
 
 	// Dimensions
 	width  int
@@ -61,9 +63,17 @@ type AppModel struct {
 }
 
 func newAppModel() AppModel {
+	// Set default dimensions so TUI renders immediately
+	// These will be updated on WindowSizeMsg
+	defaultWidth := 120
+	defaultHeight := 30
+
 	return AppModel{
 		tuiModel:     tui.NewModel(),
 		focusedPanel: PanelBrowser,
+		agentVisible: true, // Visible by default, toggle with \
+		width:        defaultWidth,
+		height:       defaultHeight,
 	}
 }
 
@@ -107,9 +117,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.agentInitialized = true
 		initCmd := m.agentModel.Init()
 		cmds = append(cmds, initCmd)
-		// Send initial size to agent
+		// Send initial size to agent (subtract header height)
 		if m.width > 0 && !m.compact {
-			agentMsg := tea.WindowSizeMsg{Width: AgentPanelWidth, Height: m.height}
+			agentMsg := tea.WindowSizeMsg{Width: AgentPanelWidth, Height: m.height - AgentHeaderHeight}
 			var agentCmd tea.Cmd
 			m.agentModel, agentCmd = m.agentModel.Update(agentMsg)
 			cmds = append(cmds, agentCmd)
@@ -125,8 +135,18 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
-		// Tab switches focus between panels (only if not compact)
-		if msg.String() == "tab" && !m.compact {
+		// Backslash toggles agent panel visibility (like Crush)
+		if msg.String() == "\\" && !m.compact {
+			m.agentVisible = !m.agentVisible
+			// If hiding panel, switch focus to browser
+			if !m.agentVisible {
+				m.focusedPanel = PanelBrowser
+			}
+			return m, nil
+		}
+
+		// Tab switches focus between panels (only if agent visible)
+		if msg.String() == "tab" && !m.compact && m.agentVisible {
 			if m.focusedPanel == PanelBrowser {
 				m.focusedPanel = PanelAgent
 			} else {
@@ -136,7 +156,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Route to focused panel
-		if m.focusedPanel == PanelAgent && m.agentModel != nil && !m.compact {
+		if m.focusedPanel == PanelAgent && m.agentModel != nil && !m.compact && m.agentVisible {
 			var cmd tea.Cmd
 			m.agentModel, cmd = m.agentModel.Update(msg)
 			return m, cmd
@@ -154,8 +174,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		lastMouseEvent = now
 
-		// Handle click for panel switching
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && !m.compact {
+		// Handle click for panel switching (only when agent is visible)
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && !m.compact && m.agentVisible {
 			browserWidth := m.width - AgentPanelWidth
 			if msg.X < browserWidth {
 				m.focusedPanel = PanelBrowser
@@ -165,7 +185,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Route to appropriate panel
-		if m.focusedPanel == PanelAgent && m.agentModel != nil && !m.compact {
+		if m.focusedPanel == PanelAgent && m.agentModel != nil && !m.compact && m.agentVisible {
 			adjustedMsg := msg
 			adjustedMsg.X = msg.X - (m.width - AgentPanelWidth)
 			var cmd tea.Cmd
@@ -184,18 +204,22 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		var cmds []tea.Cmd
 		if m.compact {
+			// In compact mode, subtract browser header height
+			compactMsg := tea.WindowSizeMsg{Width: msg.Width, Height: m.height - BrowserHeaderHeight}
 			var cmd tea.Cmd
-			m.tuiModel, cmd = m.tuiModel.Update(msg)
+			m.tuiModel, cmd = m.tuiModel.Update(compactMsg)
 			cmds = append(cmds, cmd)
 		} else {
 			browserWidth := m.width - AgentPanelWidth
-			browserMsg := tea.WindowSizeMsg{Width: browserWidth, Height: m.height}
+			// Subtract header height so content doesn't overflow
+			browserMsg := tea.WindowSizeMsg{Width: browserWidth, Height: m.height - BrowserHeaderHeight}
 			var cmd tea.Cmd
 			m.tuiModel, cmd = m.tuiModel.Update(browserMsg)
 			cmds = append(cmds, cmd)
 
 			if m.agentModel != nil {
-				agentMsg := tea.WindowSizeMsg{Width: AgentPanelWidth, Height: m.height}
+				// Subtract agent header height for KEVin panel
+				agentMsg := tea.WindowSizeMsg{Width: AgentPanelWidth, Height: m.height - AgentHeaderHeight}
 				var agentCmd tea.Cmd
 				m.agentModel, agentCmd = m.agentModel.Update(agentMsg)
 				cmds = append(cmds, agentCmd)
@@ -205,13 +229,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tui.OpenAgentMsg:
 		if !m.compact {
+			m.agentVisible = true // Show panel when Ctrl+K pressed
 			m.focusedPanel = PanelAgent
 		}
 		return m, nil
 	}
 
 	// Route other messages to focused panel only (prevents flickering from spinner ticks)
-	if m.focusedPanel == PanelAgent && m.agentModel != nil && !m.compact {
+	if m.focusedPanel == PanelAgent && m.agentModel != nil && !m.compact && m.agentVisible {
 		var cmd tea.Cmd
 		m.agentModel, cmd = m.agentModel.Update(msg)
 		return m, cmd
@@ -227,31 +252,24 @@ func (m AppModel) View() string {
 		return "Loading..."
 	}
 
-	if m.compact {
-		// Compact mode: just browser, full width
+	// Compact mode or agent hidden: just browser, full width
+	if m.compact || !m.agentVisible {
 		return m.tuiModel.View()
 	}
 
 	// Normal mode: browser + agent sidebar
 	browserWidth := m.width - AgentPanelWidth
 
-	// Browser panel (no extra border, let internal component handle it)
 	browserView := lipgloss.NewStyle().
 		Width(browserWidth).
 		Height(m.height).
 		Render(m.tuiModel.View())
 
-	// Agent sidebar with border
+	// Agent sidebar
 	agentBorder := borderUnfocused
 	if m.focusedPanel == PanelAgent {
 		agentBorder = borderFocused
 	}
-
-	agentStyle := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder(), false, false, false, true). // Left border only
-		BorderForeground(agentBorder).
-		Width(AgentPanelWidth - 1).
-		Height(m.height)
 
 	var agentContent string
 	if m.agentModel != nil {
@@ -263,6 +281,12 @@ func (m AppModel) View() string {
 	} else {
 		agentContent = m.renderLoading()
 	}
+
+	agentStyle := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), false, false, false, true). // Left border only
+		BorderForeground(agentBorder).
+		Width(AgentPanelWidth - 1).
+		Height(m.height)
 
 	agentView := agentStyle.Render(agentContent)
 
@@ -304,92 +328,85 @@ func (m AppModel) renderLoading() string {
 		Render("Loading KEVin...")
 }
 
-func main() {
-	agentMode := flag.Bool("agent", false, "Start in agent-only mode")
-	agentShort := flag.Bool("a", false, "Start in agent-only mode (shorthand)")
-	serveMode := flag.Bool("serve", false, "Start A2A server mode")
-	serveShort := flag.Bool("s", false, "Start A2A server mode (shorthand)")
-	port := flag.Int("port", 8001, "Port for A2A server")
-	version := flag.Bool("version", false, "Print version and exit")
-	help := flag.Bool("help", false, "Print help and exit")
-	flag.BoolVar(help, "h", false, "Print help and exit (shorthand)")
-
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `KEVs TUI - Terminal UI for CISA Known Exploited Vulnerabilities
+func printUsage() {
+	fmt.Fprintf(os.Stderr, `KEVs TUI - Terminal UI for CISA Known Exploited Vulnerabilities
 
 Usage:
-  kevs-tui [flags] [query...]
+  kevs-tui [command] [args...]
 
-Modes:
-  Default     KEV browser with KEVin AI sidebar
-  Agent       Chat with KEVin AI only
-  Serve       Run as A2A server
-
-Flags:
-  -a, --agent       Start in agent-only mode (requires LLM_PROVIDER config)
-  -s, --serve       Start A2A server mode
-      --port        Port for A2A server (default: 8001)
-  -h, --help        Print this help message
-      --version     Print version information
+Commands:
+  (default)   KEV browser with KEVin AI sidebar
+  agent       Chat with KEVin AI only
+  serve       Run as A2A server
 
 Examples:
   kevs-tui                           # Browser with agent sidebar
-  kevs-tui --agent                   # Agent-only mode
-  kevs-tui -a "Microsoft vulns"      # One-shot query
-  kevs-tui --serve --port 8001       # Start A2A server
+  kevs-tui agent                     # Interactive agent chat
+  kevs-tui agent "Microsoft vulns"   # One-shot query
+  kevs-tui serve                     # Start A2A server on port 8001
+  kevs-tui serve --port 9000         # Start A2A server on custom port
 
 Environment:
-  LLM_PROVIDER      LLM provider: gemini (default) or ollama
+  LLM_PROVIDER      LLM provider: gemini (default), vertex, or ollama
   LLM_MODEL         Model name (e.g., gemini-2.0-flash, llama3.2)
   GEMINI_API_KEY    Required for Gemini provider
+  VERTEX_PROJECT    GCP project ID (required for Vertex AI)
+  VERTEX_LOCATION   GCP region (required for Vertex AI, e.g., us-central1)
   OLLAMA_URL        Ollama server URL (default: http://localhost:11434)
 
-Keyboard:
+Keyboard (TUI mode):
+  \       Toggle KEVin panel
   Tab     Switch focus between panels
-  Click   Click to focus panel
+  Ctrl+K  Open/focus KEVin
+  Ctrl+P  Open command palette
   Ctrl+C  Quit
 `)
+}
+
+func main() {
+	// No args = default TUI mode
+	if len(os.Args) < 2 {
+		runDefaultTUI()
+		return
 	}
 
-	flag.Parse()
+	// Handle subcommands
+	switch os.Args[1] {
+	case "serve":
+		// Parse serve-specific flags
+		serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
+		port := serveCmd.Int("port", 8001, "Port for A2A server")
+		serveCmd.Parse(os.Args[2:])
 
-	if *help {
-		flag.Usage()
-		os.Exit(0)
-	}
-
-	if *version {
-		fmt.Println("kevs-tui v0.1.0")
-		os.Exit(0)
-	}
-
-	// Serve mode - A2A server
-	if *serveMode || *serveShort {
 		if err := cmd.RunServe(*port); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
-		return
-	}
 
-	// Agent mode
-	if *agentMode || *agentShort {
-		args := flag.Args()
+	case "agent":
+		// Args after "agent" are the query
+		args := os.Args[2:]
 		if err := cmd.RunAgent(args); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
-		return
-	}
 
-	if flag.NArg() > 0 {
-		if err := cmd.RunAgent(flag.Args()); err != nil {
+	case "help", "--help", "-h":
+		printUsage()
+
+	case "version", "--version":
+		fmt.Println("kevs-tui v0.1.0")
+
+	default:
+		// Unknown command - treat as query to agent
+		if err := cmd.RunAgent(os.Args[1:]); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
-		return
 	}
+}
 
+func runDefaultTUI() {
 	p := tea.NewProgram(newAppModel(), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

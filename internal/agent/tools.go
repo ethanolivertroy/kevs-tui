@@ -64,7 +64,7 @@ type SearchParams struct {
 
 // SearchResult for search_kevs tool
 type SearchResult struct {
-	Count   int                   `json:"count"`
+	Count   int                    `json:"count"`
 	Results []VulnerabilitySummary `json:"results"`
 }
 
@@ -88,22 +88,22 @@ type CVEDetailsParams struct {
 
 // CVEDetailsResult for get_cve_details tool
 type CVEDetailsResult struct {
-	Found         bool     `json:"found"`
-	CVEID         string   `json:"cve_id,omitempty"`
-	Vendor        string   `json:"vendor,omitempty"`
-	Product       string   `json:"product,omitempty"`
-	Name          string   `json:"name,omitempty"`
-	Description   string   `json:"description,omitempty"`
-	DateAdded     string   `json:"date_added,omitempty"`
-	DueDate       string   `json:"due_date,omitempty"`
-	RequiredAction string  `json:"required_action,omitempty"`
-	Ransomware    bool     `json:"ransomware_use,omitempty"`
-	IsOverdue     bool     `json:"is_overdue,omitempty"`
-	CWEs          []string `json:"cwes,omitempty"`
-	Notes         string   `json:"notes,omitempty"`
-	NVDURL        string   `json:"nvd_url,omitempty"`
-	EPSSScore     float64  `json:"epss_score,omitempty"`
-	EPSSPercentile float64 `json:"epss_percentile,omitempty"`
+	Found          bool     `json:"found"`
+	CVEID          string   `json:"cve_id,omitempty"`
+	Vendor         string   `json:"vendor,omitempty"`
+	Product        string   `json:"product,omitempty"`
+	Name           string   `json:"name,omitempty"`
+	Description    string   `json:"description,omitempty"`
+	DateAdded      string   `json:"date_added,omitempty"`
+	DueDate        string   `json:"due_date,omitempty"`
+	RequiredAction string   `json:"required_action,omitempty"`
+	Ransomware     bool     `json:"ransomware_use,omitempty"`
+	IsOverdue      bool     `json:"is_overdue,omitempty"`
+	CWEs           []string `json:"cwes,omitempty"`
+	Notes          string   `json:"notes,omitempty"`
+	NVDURL         string   `json:"nvd_url,omitempty"`
+	EPSSScore      float64  `json:"epss_score,omitempty"`
+	EPSSPercentile float64  `json:"epss_percentile,omitempty"`
 }
 
 // ListParams for list tools
@@ -113,8 +113,8 @@ type ListParams struct {
 
 // ListResult for list tools
 type ListResult struct {
-	Count   int                   `json:"count"`
-	Total   int                   `json:"total"`
+	Count   int                    `json:"count"`
+	Total   int                    `json:"total"`
 	Results []VulnerabilitySummary `json:"results"`
 }
 
@@ -125,12 +125,12 @@ type StatsParams struct {
 
 // StatsResult for get_stats tool
 type StatsResult struct {
-	TotalCVEs       int               `json:"total_cves"`
-	RansomwareCount int               `json:"ransomware_count"`
-	OverdueCount    int               `json:"overdue_count"`
-	TopVendors      []VendorCount     `json:"top_vendors"`
-	TopCWEs         []CWECount        `json:"top_cwes"`
-	RiskBreakdown   RiskBreakdown     `json:"risk_breakdown"`
+	TotalCVEs       int           `json:"total_cves"`
+	RansomwareCount int           `json:"ransomware_count"`
+	OverdueCount    int           `json:"overdue_count"`
+	TopVendors      []VendorCount `json:"top_vendors"`
+	TopCWEs         []CWECount    `json:"top_cwes"`
+	RiskBreakdown   RiskBreakdown `json:"risk_breakdown"`
 }
 
 // VendorCount for stats

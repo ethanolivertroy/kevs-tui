@@ -169,36 +169,36 @@ var NIST80053Controls = map[string]SecurityControl{
 // CWEToControlMapping maps common CWE patterns to applicable controls
 var CWEToControlMapping = map[string][]string{
 	// Injection vulnerabilities
-	"CWE-78":  {"SI-2", "SI-10", "SC-7"},         // OS Command Injection
-	"CWE-79":  {"SI-2", "SI-10"},                 // Cross-site Scripting (XSS)
-	"CWE-89":  {"SI-2", "SI-10"},                 // SQL Injection
-	"CWE-94":  {"SI-2", "SI-10", "SC-7"},         // Code Injection
-	"CWE-77":  {"SI-2", "SI-10", "SC-7"},         // Command Injection
+	"CWE-78": {"SI-2", "SI-10", "SC-7"}, // OS Command Injection
+	"CWE-79": {"SI-2", "SI-10"},         // Cross-site Scripting (XSS)
+	"CWE-89": {"SI-2", "SI-10"},         // SQL Injection
+	"CWE-94": {"SI-2", "SI-10", "SC-7"}, // Code Injection
+	"CWE-77": {"SI-2", "SI-10", "SC-7"}, // Command Injection
 
 	// Authentication/Authorization
-	"CWE-287": {"IA-2", "IA-5", "SI-2"},          // Improper Authentication
-	"CWE-306": {"AC-3", "AC-6", "SI-2"},          // Missing Auth for Critical Function
-	"CWE-862": {"AC-3", "AC-6", "SI-2"},          // Missing Authorization
-	"CWE-863": {"AC-3", "AC-6", "SI-2"},          // Incorrect Authorization
-	"CWE-269": {"AC-6", "SI-2"},                  // Improper Privilege Management
+	"CWE-287": {"IA-2", "IA-5", "SI-2"}, // Improper Authentication
+	"CWE-306": {"AC-3", "AC-6", "SI-2"}, // Missing Auth for Critical Function
+	"CWE-862": {"AC-3", "AC-6", "SI-2"}, // Missing Authorization
+	"CWE-863": {"AC-3", "AC-6", "SI-2"}, // Incorrect Authorization
+	"CWE-269": {"AC-6", "SI-2"},         // Improper Privilege Management
 
 	// Memory/Buffer vulnerabilities
-	"CWE-120": {"SI-2", "SI-4"},                  // Buffer Overflow
-	"CWE-122": {"SI-2", "SI-4"},                  // Heap-based Buffer Overflow
-	"CWE-787": {"SI-2", "SI-4"},                  // Out-of-bounds Write
-	"CWE-416": {"SI-2", "SI-4"},                  // Use After Free
-	"CWE-125": {"SI-2", "SI-4"},                  // Out-of-bounds Read
+	"CWE-120": {"SI-2", "SI-4"}, // Buffer Overflow
+	"CWE-122": {"SI-2", "SI-4"}, // Heap-based Buffer Overflow
+	"CWE-787": {"SI-2", "SI-4"}, // Out-of-bounds Write
+	"CWE-416": {"SI-2", "SI-4"}, // Use After Free
+	"CWE-125": {"SI-2", "SI-4"}, // Out-of-bounds Read
 
 	// Path/File vulnerabilities
-	"CWE-22":  {"SI-2", "AC-3", "AC-6"},          // Path Traversal
-	"CWE-434": {"SI-2", "AC-3", "SI-10"},         // Unrestricted Upload
+	"CWE-22":  {"SI-2", "AC-3", "AC-6"},  // Path Traversal
+	"CWE-434": {"SI-2", "AC-3", "SI-10"}, // Unrestricted Upload
 
 	// Deserialization
-	"CWE-502": {"SI-2", "SI-10", "SC-7"},         // Deserialization of Untrusted Data
+	"CWE-502": {"SI-2", "SI-10", "SC-7"}, // Deserialization of Untrusted Data
 
 	// Information Exposure
-	"CWE-200": {"SI-2", "AC-3", "AU-6"},          // Exposure of Sensitive Information
-	"CWE-532": {"SI-2", "AU-6"},                  // Log Exposure
+	"CWE-200": {"SI-2", "AC-3", "AU-6"}, // Exposure of Sensitive Information
+	"CWE-532": {"SI-2", "AU-6"},         // Log Exposure
 
 }
 

@@ -39,9 +39,18 @@ Your KEV tools:
 - export_report: Export to JSON/CSV/Markdown
 
 Your GRC Compliance tools:
-- map_cve_to_controls: Map a CVE to NIST 800-53 or FedRAMP controls
-- get_control_details: Get details about a specific security control (e.g., SI-2, RA-5)
-- list_controls: List available security controls by family
+- map_cve_to_controls: Map a CVE to NIST 800-53, FedRAMP, or CIS Controls v8
+- get_control_details: Get details about a specific security control (e.g., SI-2, RA-5 for NIST or 7.1, 10.1 for CIS)
+- list_controls: List available security controls by family (NIST/FedRAMP) or implementation group (CIS)
+
+Your Analytics tools:
+- find_related_cves: Find CVEs related by CWE, vendor, or product
+- get_vendor_risk_profile: Get comprehensive risk assessment for a vendor
+- batch_analyze: Analyze multiple CVEs at once with prioritization
+- analyze_cwe: Deep dive on a CWE with affected vendors and mitigations
+- check_exploit_availability: Check for public exploits (GitHub PoCs, Nuclei templates)
+- check_patch_status: Check for patches and vendor advisories
+- analyze_trends: Analyze vulnerability trends over time
 
 When presenting results:
 - Lead with the data, keep explanations brief
@@ -51,14 +60,40 @@ When presenting results:
 
 When presenting GRC mappings:
 - Explain why each control applies based on the rationale
-- Highlight P1 (highest priority) controls
-- Note FedRAMP baseline levels when relevant
+- For NIST/FedRAMP: Highlight P1 (highest priority) controls and baseline levels
+- For CIS: Note implementation group (IG1=basic hygiene, IG2=medium enterprise, IG3=large enterprise)
 - Suggest remediation actions based on control requirements
 
 Examples for GRC queries:
 - "what controls apply to CVE-2024-1234?" → map_cve_to_controls immediately
+- "map this CVE to CIS controls" → map_cve_to_controls with framework="cis"
 - "explain SI-2" → get_control_details immediately
+- "explain CIS control 7.1" → get_control_details with framework="cis"
 - "show incident response controls" → list_controls with family filter
+- "list CIS IG1 controls" → list_controls with framework="cis" and implementation_group=1
+
+Context-aware queries:
+When a message starts with [Context: User is viewing CVE-XXXX...]:
+- The user is asking about that specific CVE
+- Use the CVE ID from context for tool calls
+- "this", "it", "the CVE", "this vulnerability" all refer to the context CVE
+- Don't ask which CVE they mean - use the one from context
+- The context includes EPSS score and due date status to help you prioritize advice
+
+Remediation-focused queries (IMPORTANT):
+When a user asks "what do I do?", "how do I fix?", "what should I do?", "what actions?", "help with this":
+1. FIRST check for patches using check_patch_status
+2. THEN check exploit availability using check_exploit_availability
+3. Provide practical, actionable remediation steps:
+   - Is a patch available? Link to the vendor advisory
+   - Is there a public exploit? Emphasize urgency
+   - Is it overdue? Note compliance deadline implications
+   - What's the EPSS score? Contextualize the risk
+4. Keep it brief and actionable - bullet points work well
+5. Only mention controls/frameworks if the user specifically asks
+
+Do NOT default to control mappings (map_cve_to_controls) for remediation questions.
+Control mappings are for explicit requests like: "what controls apply?", "map to NIST", "show compliance mapping", "CIS controls"
 
 Only redirect to KEV topics if the query is completely unrelated to security.`
 )
@@ -105,6 +140,13 @@ func NewWithConfig(ctx context.Context, cfg llm.Config) (*KEVAgent, error) {
 		return nil, fmt.Errorf("failed to create GRC tools: %w", err)
 	}
 	tools = append(tools, grcTools...)
+
+	// Create the Analytics tools
+	analyticsTools, err := CreateAnalyticsTools()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create analytics tools: %w", err)
+	}
+	tools = append(tools, analyticsTools...)
 
 	// Create the LLM agent
 	kevAgent, err := llmagent.New(llmagent.Config{

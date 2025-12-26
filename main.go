@@ -12,12 +12,13 @@ import (
 	"github.com/ethanolivertroy/kevs-tui/cmd"
 	"github.com/ethanolivertroy/kevs-tui/internal/agent"
 	"github.com/ethanolivertroy/kevs-tui/internal/chat"
+	"github.com/ethanolivertroy/kevs-tui/internal/model"
 	"github.com/ethanolivertroy/kevs-tui/internal/tui"
 )
 
 // Layout constants (Crush-style)
 const (
-	AgentPanelWidth     = 45  // Fixed width for agent sidebar
+	AgentPanelWidth     = 55  // Fixed width for agent sidebar
 	CompactBreakpoint   = 100 // Below this width, hide agent panel
 	BrowserHeaderHeight = 0   // No separate header - TUI list has its own title
 	AgentHeaderHeight   = 0   // No separate header - chat model has its own title
@@ -56,6 +57,7 @@ type AppModel struct {
 	focusedPanel     PanelType
 	compact          bool // Hide agent panel in compact mode (window too narrow)
 	agentVisible     bool // User-controlled visibility (toggle with \)
+	pendingCVE       *model.VulnerabilityItem // Stores CVE context until agent initializes
 
 	// Dimensions
 	width  int
@@ -123,6 +125,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var agentCmd tea.Cmd
 			m.agentModel, agentCmd = m.agentModel.Update(agentMsg)
 			cmds = append(cmds, agentCmd)
+		}
+		// Apply any pending CVE context that arrived before agent initialized
+		if m.pendingCVE != nil {
+			cveMsg := model.CVESelectedMsg{CVE: m.pendingCVE}
+			var cveCmd tea.Cmd
+			m.agentModel, cveCmd = m.agentModel.Update(cveMsg)
+			cmds = append(cmds, cveCmd)
 		}
 		return m, tea.Batch(cmds...)
 
@@ -231,6 +240,27 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.compact {
 			m.agentVisible = true // Show panel when Ctrl+K pressed
 			m.focusedPanel = PanelAgent
+		}
+		return m, nil
+
+	case model.CVESelectedMsg:
+		// Route CVE selection to chat model for context-aware queries
+		// Always store as pending in case agent needs to be re-initialized
+		m.pendingCVE = msg.CVE
+		if m.agentModel != nil {
+			var cmd tea.Cmd
+			m.agentModel, cmd = m.agentModel.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
+
+	case chat.AgentResponseMsg:
+		// Always route agent responses to chat model regardless of focus
+		// This prevents KEVin from freezing when user switches panels during a request
+		if m.agentModel != nil {
+			var cmd tea.Cmd
+			m.agentModel, cmd = m.agentModel.Update(msg)
+			return m, cmd
 		}
 		return m, nil
 	}

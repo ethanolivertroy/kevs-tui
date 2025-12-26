@@ -33,3 +33,9 @@ func (v VulnerabilityItem) FilterValue() string {
 		v.VulnerabilityName,
 	}, " ")
 }
+
+// CVESelectedMsg notifies components when user selects/deselects a CVE
+// This is a shared message type to avoid import cycles between tui and chat packages
+type CVESelectedMsg struct {
+	CVE *VulnerabilityItem
+}

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ethanolivertroy/kevs-tui/internal/model"
 )
 
@@ -198,5 +199,59 @@ func TestRenderDetailContentNilVuln(t *testing.T) {
 	// Should handle nil gracefully
 	if output != "No vulnerability selected" {
 		t.Errorf("Expected 'No vulnerability selected', got %q", output)
+	}
+}
+
+// CVE context message tests
+
+func TestExitDetailViewSendsCVESelectedMsgNil(t *testing.T) {
+	m := NewModel()
+	m.width = 80
+	m.height = 24
+	m.loading = false
+	m.view = ViewDetail
+
+	// Set a selected vulnerability
+	testVuln := &model.VulnerabilityItem{
+		Vulnerability: model.Vulnerability{
+			CVEID:             "CVE-2025-88888",
+			VendorProject:     "ExitTestVendor",
+			Product:           "ExitTestProduct",
+			VulnerabilityName: "Exit Test Vulnerability",
+		},
+	}
+	m.selectedVuln = testVuln
+
+	// Simulate pressing escape to exit detail view
+	msg := tea.KeyMsg{Type: tea.KeyEscape}
+	newModel, cmd := m.Update(msg)
+
+	updatedModel := newModel.(Model)
+
+	// Verify we're back in list view
+	if updatedModel.view != ViewList {
+		t.Errorf("Expected ViewList, got %v", updatedModel.view)
+	}
+
+	// Verify selectedVuln is cleared
+	if updatedModel.selectedVuln != nil {
+		t.Error("Expected selectedVuln to be nil after exiting detail view")
+	}
+
+	// Execute the command to get the CVESelectedMsg
+	if cmd == nil {
+		t.Fatal("Expected non-nil command from exiting detail view")
+	}
+
+	// Execute the command function to get the message
+	resultMsg := cmd()
+
+	// Check if it's a CVESelectedMsg with nil CVE
+	cveMsg, ok := resultMsg.(model.CVESelectedMsg)
+	if !ok {
+		t.Fatalf("Expected CVESelectedMsg, got %T", resultMsg)
+	}
+	if cveMsg.CVE != nil {
+		t.Errorf("Expected nil CVE in message, got %+v", cveMsg.CVE)
 	}
 }

@@ -93,6 +93,11 @@ var (
 	DimmedItemStyle = lipgloss.NewStyle().
 			Foreground(SubtleColor).
 			PaddingLeft(2)
+
+	// Text selection style
+	SelectionStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#5A4BA3")).
+			Foreground(lipgloss.Color("#FFFFFF"))
 )
 
 // RansomwareBadgeText returns a formatted ransomware badge

@@ -115,6 +115,12 @@ type Model struct {
 	selectedExportIndex int
 	// Pending export (for confirmation)
 	pendingExport *PendingExport
+	// Text selection for detail view
+	selecting    bool
+	selStartLine int
+	selStartCol  int
+	selEndLine   int
+	selEndCol    int
 }
 
 // PendingExport holds export details awaiting confirmation
@@ -258,7 +264,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.viewport = viewport.New(m.width-4, m.height-6)
 					m.viewport.SetContent(m.renderDetailContent())
 					m.viewportReady = true
-					return m, tea.Batch(m.spinner.Tick, m.fetchCVSS(item.CVEID))
+					// Notify chat panel of CVE selection for context-aware queries
+					cveMsg := func() tea.Msg { return model.CVESelectedMsg{CVE: &item} }
+					return m, tea.Batch(m.spinner.Tick, m.fetchCVSS(item.CVEID), cveMsg)
 				}
 			case "s":
 				m.sortMode = (m.sortMode + 1) % 4
@@ -324,7 +332,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q", "esc", "backspace":
 				m.view = ViewList
 				m.selectedVuln = nil
-				return m, nil
+				m.clearSelection() // Clear text selection
+				// Clear CVE context in chat panel
+				return m, func() tea.Msg { return model.CVESelectedMsg{CVE: nil} }
 			case "o":
 				if m.selectedVuln != nil {
 					openURL(m.selectedVuln.NVDURL())
@@ -598,6 +608,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.loadingEPSS = false
 		m.err = msg.Err
+		return m, nil
+
+	case tea.MouseMsg:
+		// Only handle in detail view
+		if m.view != ViewDetail {
+			return m, nil
+		}
+
+		// Wheel events for scrolling
+		if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+			m.clearSelection()
+			if m.viewportReady {
+				var cmd tea.Cmd
+				m.viewport, cmd = m.viewport.Update(msg)
+				return m, cmd
+			}
+			return m, nil
+		}
+
+		// Start selection on left click
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			line, col := m.screenToContent(msg.X, msg.Y)
+			m.selecting = true
+			m.selStartLine, m.selStartCol = line, col
+			m.selEndLine, m.selEndCol = line, col
+			m.refreshDetailViewport()
+			return m, nil
+		}
+
+		// Update selection during drag
+		if msg.Action == tea.MouseActionMotion && m.selecting {
+			line, col := m.screenToContent(msg.X, msg.Y)
+			m.selEndLine, m.selEndCol = line, col
+			m.refreshDetailViewport()
+			return m, nil
+		}
+
+		// End selection on release
+		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+			m.selecting = false
+			return m, nil
+		}
+
 		return m, nil
 	}
 
@@ -1162,4 +1215,143 @@ func extractCWENumber(cwe string) string {
 		return cwe
 	}
 	return ""
+}
+
+// Text selection helper functions
+
+// screenToContent converts screen coordinates to content line/column
+func (m Model) screenToContent(screenX, screenY int) (line, col int) {
+	// Account for header area in detail view
+	viewportStartY := 4 // Title + padding
+
+	relativeY := screenY - viewportStartY
+	if relativeY < 0 {
+		relativeY = 0
+	}
+	line = relativeY + m.viewport.YOffset
+
+	col = screenX - 2
+	if col < 0 {
+		col = 0
+	}
+	return line, col
+}
+
+// clearSelection clears the current text selection
+func (m *Model) clearSelection() {
+	m.selecting = false
+	m.selStartLine, m.selStartCol = 0, 0
+	m.selEndLine, m.selEndCol = 0, 0
+}
+
+// hasSelection returns true if there is an active selection
+func (m Model) hasSelection() bool {
+	return m.selStartLine != m.selEndLine || m.selStartCol != m.selEndCol
+}
+
+// refreshDetailViewport updates the viewport with selection highlighting
+func (m *Model) refreshDetailViewport() {
+	if m.viewportReady && m.selectedVuln != nil {
+		content := m.renderDetailContent()
+		if m.hasSelection() {
+			content = m.applySelectionHighlight(content)
+		}
+		m.viewport.SetContent(content)
+	}
+}
+
+// normalizeSelection ensures start is before end
+func (m Model) normalizeSelection() (startLine, startCol, endLine, endCol int) {
+	if m.selStartLine < m.selEndLine ||
+		(m.selStartLine == m.selEndLine && m.selStartCol <= m.selEndCol) {
+		return m.selStartLine, m.selStartCol, m.selEndLine, m.selEndCol
+	}
+	return m.selEndLine, m.selEndCol, m.selStartLine, m.selStartCol
+}
+
+// applySelectionHighlight applies selection styling to content (ANSI-aware)
+func (m Model) applySelectionHighlight(content string) string {
+	lines := strings.Split(content, "\n")
+
+	// Normalize selection (start before end)
+	startLine, startCol, endLine, endCol := m.normalizeSelection()
+
+	for i := startLine; i <= endLine && i < len(lines); i++ {
+		line := lines[i]
+
+		// Calculate selection bounds for this line
+		selStart := 0
+		selEnd := visibleLength(line)
+
+		if i == startLine {
+			selStart = startCol
+		}
+		if i == endLine {
+			selEnd = endCol
+		}
+
+		// Use ANSI-aware slicing
+		lines[i] = ansiSliceWithHighlight(line, selStart, selEnd)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// visibleLength returns the visible character count excluding ANSI escape sequences
+func visibleLength(s string) int {
+	count := 0
+	inEscape := false
+	for _, r := range s {
+		if r == '\x1b' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+				inEscape = false
+			}
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+// ansiSliceWithHighlight applies highlight to a portion of an ANSI-styled string
+// It preserves all ANSI escape sequences while only highlighting visible characters
+func ansiSliceWithHighlight(s string, start, end int) string {
+	var result strings.Builder
+	visiblePos := 0
+	inEscape := false
+	var escapeSeq strings.Builder
+
+	for _, r := range s {
+		if r == '\x1b' {
+			inEscape = true
+			escapeSeq.Reset()
+			escapeSeq.WriteRune(r)
+			continue
+		}
+
+		if inEscape {
+			escapeSeq.WriteRune(r)
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+				// End of escape sequence - write it through unchanged
+				result.WriteString(escapeSeq.String())
+				inEscape = false
+			}
+			continue
+		}
+
+		// Regular visible character
+		if visiblePos >= start && visiblePos < end {
+			// Inside selection - apply highlight
+			result.WriteString(SelectionStyle.Render(string(r)))
+		} else {
+			result.WriteRune(r)
+		}
+		visiblePos++
+	}
+
+	return result.String()
 }

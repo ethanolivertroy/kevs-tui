@@ -24,16 +24,19 @@ var (
 			Foreground(lipgloss.Color("#FFFFFF")).
 			Background(primaryColor)
 
-	// Main container
+	// Main container with solid background
 	paletteStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(primaryColor)
+			BorderForeground(primaryColor).
+			Background(lipgloss.Color("#1a1a1a")).
+			Padding(0, 1)
 
-	// Selected item - magenta background like Crush
+	// Selected item - purple background matching theme
 	selectedStyle = lipgloss.NewStyle().
-			Background(lipgloss.Color("#FF00FF")).
+			Background(primaryColor).
 			Foreground(lipgloss.Color("#FFFFFF")).
-			Bold(true)
+			Bold(true).
+			Padding(0, 1)
 
 	// Normal item
 	normalStyle = lipgloss.NewStyle().
@@ -201,12 +204,8 @@ func (m Model) View() string {
 	// Calculate content width
 	contentWidth := m.width - 2
 
-	// Build the striped header like Crush
-	title := " Commands "
-	stripeChar := "/"
-	stripeLen := (contentWidth - len(title)) / 2
-	stripe := strings.Repeat(stripeChar, stripeLen)
-	header := headerStyle.Width(contentWidth).Render(stripe + title + stripe)
+	// Clean centered header
+	header := headerStyle.Width(contentWidth).Align(lipgloss.Center).Render("Commands")
 
 	var lines []string
 	lines = append(lines, header)
@@ -235,10 +234,10 @@ func (m Model) View() string {
 
 			var line string
 			if i == m.selected {
-				// Full width highlight like Crush
-				line = selectedStyle.Width(contentWidth).Render(paddedName + shortcut)
+				// Highlight selected item
+				line = "  " + selectedStyle.Render(paddedName) + " " + shortcut
 			} else {
-				line = normalStyle.Render(paddedName) + shortcut
+				line = "  " + normalStyle.Render(paddedName) + " " + shortcut
 			}
 			lines = append(lines, line)
 		}

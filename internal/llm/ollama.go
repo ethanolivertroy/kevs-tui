@@ -185,9 +185,9 @@ func convertToOllamaMessages(contents []*genai.Content) []api.Message {
 
 // convertArgsToMap converts function call args
 func convertArgsToMap(args map[string]any) api.ToolCallFunctionArguments {
-	result := make(api.ToolCallFunctionArguments)
+	result := api.NewToolCallFunctionArguments()
 	for k, v := range args {
-		result[k] = v
+		result.Set(k, v)
 	}
 	return result
 }
@@ -222,9 +222,9 @@ func convertToOllamaTools(tools map[string]any) []api.Tool {
 	return ollamaTools
 }
 
-// convertParameters converts tool parameters to Ollama ToolProperty map
-func convertParameters(params map[string]any) map[string]api.ToolProperty {
-	result := make(map[string]api.ToolProperty)
+// convertParameters converts tool parameters to Ollama ToolPropertiesMap
+func convertParameters(params map[string]any) *api.ToolPropertiesMap {
+	result := api.NewToolPropertiesMap()
 
 	props, ok := params["properties"].(map[string]any)
 	if !ok {
@@ -249,7 +249,7 @@ func convertParameters(params map[string]any) map[string]api.ToolProperty {
 			p.Description = d
 		}
 
-		result[name] = p
+		result.Set(name, p)
 	}
 
 	return result
@@ -260,10 +260,7 @@ func convertToolCallsToResponse(toolCalls []api.ToolCall) *model.LLMResponse {
 	var parts []*genai.Part
 
 	for _, tc := range toolCalls {
-		args := make(map[string]any)
-		for k, v := range tc.Function.Arguments {
-			args[k] = v
-		}
+		args := tc.Function.Arguments.ToMap()
 
 		parts = append(parts, &genai.Part{
 			FunctionCall: &genai.FunctionCall{

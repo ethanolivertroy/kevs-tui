@@ -2,7 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -17,6 +19,21 @@ import (
 	"github.com/ethanolivertroy/kevs-tui/internal/api"
 	"github.com/ethanolivertroy/kevs-tui/internal/model"
 )
+
+// getExportDir returns a safe directory for exporting files
+func getExportDir() string {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// Fallback to current directory if home can't be determined
+		return "."
+	}
+	exportDir := filepath.Join(homeDir, ".kevs-tui-exports")
+	// Create the directory with restricted permissions (owner only)
+	if err := os.MkdirAll(exportDir, 0700); err != nil {
+		return "."
+	}
+	return exportDir
+}
 
 // ViewState represents the current view
 type ViewState int
@@ -430,9 +447,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.view == ViewExportConfirm {
 			switch msg.String() {
 			case "y", "Y", "enter":
-				// Perform the export
+				// Perform the export to safe directory
 				if m.pendingExport != nil {
-					result := Export(m.pendingExport.Vulns, m.pendingExport.Format, ".")
+					result := Export(m.pendingExport.Vulns, m.pendingExport.Format, getExportDir())
 					if result.Err != nil {
 						m.statusMsg = fmt.Sprintf("Export failed: %v", result.Err)
 					} else {

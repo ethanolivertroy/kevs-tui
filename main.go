@@ -12,6 +12,7 @@ import (
 	"github.com/ethanolivertroy/kevs-tui/cmd"
 	"github.com/ethanolivertroy/kevs-tui/internal/agent"
 	"github.com/ethanolivertroy/kevs-tui/internal/chat"
+	"github.com/ethanolivertroy/kevs-tui/internal/llm"
 	"github.com/ethanolivertroy/kevs-tui/internal/model"
 	"github.com/ethanolivertroy/kevs-tui/internal/tui"
 )
@@ -82,8 +83,9 @@ func newAppModel() AppModel {
 func (m AppModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{m.tuiModel.Init()}
 
-	// Initialize agent immediately if API key is set
-	if os.Getenv("GEMINI_API_KEY") != "" {
+	// Initialize agent immediately if any LLM provider is configured
+	cfg := llm.ConfigFromEnv()
+	if err := cfg.Validate(); err == nil {
 		cmds = append(cmds, m.initAgent())
 	}
 
@@ -306,10 +308,14 @@ func (m AppModel) View() string {
 		agentContent = m.agentModel.View()
 	} else if m.agentError != "" {
 		agentContent = m.renderError()
-	} else if os.Getenv("GEMINI_API_KEY") == "" {
-		agentContent = m.renderNoApiKey()
 	} else {
-		agentContent = m.renderLoading()
+		// Check if any LLM provider is configured
+		cfg := llm.ConfigFromEnv()
+		if err := cfg.Validate(); err != nil {
+			agentContent = m.renderNoApiKey()
+		} else {
+			agentContent = m.renderLoading()
+		}
 	}
 
 	agentStyle := lipgloss.NewStyle().
@@ -321,6 +327,23 @@ func (m AppModel) View() string {
 	agentView := agentStyle.Render(agentContent)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, browserView, agentView)
+}
+
+// getProviderSetupHelp returns setup instructions for the configured provider
+func getProviderSetupHelp() string {
+	cfg := llm.ConfigFromEnv()
+	switch cfg.Provider {
+	case "gemini":
+		return "Set GEMINI_API_KEY\nto enable"
+	case "vertex":
+		return "Set VERTEX_PROJECT\nand VERTEX_LOCATION"
+	case "ollama":
+		return "Start Ollama:\n  ollama serve"
+	case "openrouter":
+		return "Set OPENROUTER_API_KEY\nto enable"
+	default:
+		return "Configure LLM_PROVIDER\nand credentials"
+	}
 }
 
 func (m AppModel) renderNoApiKey() string {
@@ -335,7 +358,7 @@ func (m AppModel) renderNoApiKey() string {
 
 	instruction := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#888")).
-		Render("Set GEMINI_API_KEY\nto enable")
+		Render(getProviderSetupHelp())
 
 	return lipgloss.JoinVertical(lipgloss.Center,
 		"",

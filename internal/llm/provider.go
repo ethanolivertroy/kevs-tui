@@ -3,6 +3,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -20,6 +21,26 @@ type Config struct {
 	VertexLocation string // GCP region, e.g., "us-central1" (VERTEX_LOCATION)
 	// OpenRouter fields
 	OpenRouterAPIKey string // OpenRouter API key (OPENROUTER_API_KEY)
+}
+
+// MarshalJSON implements json.Marshaler to redact sensitive credentials
+func (c Config) MarshalJSON() ([]byte, error) {
+	type Alias Config
+	redacted := struct {
+		Alias
+		APIKey           string `json:"api_key,omitempty"`
+		OpenRouterAPIKey string `json:"openrouter_api_key,omitempty"`
+	}{
+		Alias: Alias(c),
+	}
+	// Redact API keys if set
+	if c.APIKey != "" {
+		redacted.APIKey = "[REDACTED]"
+	}
+	if c.OpenRouterAPIKey != "" {
+		redacted.OpenRouterAPIKey = "[REDACTED]"
+	}
+	return json.Marshal(redacted)
 }
 
 // ConfigFromEnv creates a Config from environment variables

@@ -42,7 +42,7 @@ go run . serve --port 9000        # A2A server on custom port
 ### Environment Variables
 ```bash
 # LLM Provider Selection
-LLM_PROVIDER=gemini               # Options: gemini, vertex, ollama (default: gemini)
+LLM_PROVIDER=gemini               # Options: gemini, vertex, ollama, openrouter (default: gemini)
 LLM_MODEL=gemini-2.0-flash        # Model name
 
 # Gemini
@@ -54,6 +54,9 @@ VERTEX_LOCATION=us-central1
 
 # Ollama
 OLLAMA_URL=http://localhost:11434
+
+# OpenRouter
+OPENROUTER_API_KEY=your-key
 ```
 
 ## Code Organization
@@ -156,6 +159,7 @@ Supported providers:
 - `gemini` (default): Requires `GEMINI_API_KEY`
 - `vertex`: Requires `VERTEX_PROJECT` and `VERTEX_LOCATION`
 - `ollama`: Requires `OLLAMA_URL` (defaults to localhost:11434)
+- `openrouter`: Requires `OPENROUTER_API_KEY`
 
 ## Naming Conventions
 

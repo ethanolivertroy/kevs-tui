@@ -174,8 +174,7 @@ kevs-tui agent
 | `d` | Toggle overdue filter |
 | `o` | Open NVD URL in browser |
 | `c` | Copy CVE ID to clipboard |
-| `t` | Jump to top |
-| `b` | Jump to bottom |
+| `t` | Cycle theme |
 | `g` | Open charts menu |
 | `x` | Open export menu |
 | `q` | Quit |

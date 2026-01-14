@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ethanolivertroy/kevs-tui/internal/llm"
@@ -103,7 +104,8 @@ type KEVAgent struct {
 	agent          agent.Agent
 	runner         *runner.Runner
 	sessionService session.Service
-	// Session tracking for multi-turn conversations
+	// Session tracking for multi-turn conversations (protected by mu)
+	mu         sync.Mutex
 	userID     string
 	sessionID  string
 	hasSession bool
@@ -185,13 +187,15 @@ func (a *KEVAgent) Agent() agent.Agent {
 	return a.agent
 }
 
-// Query sends a query to the agent and returns the response
+// Query sends a query to the agent and returns the response.
+// Each call creates a unique one-shot session for isolated queries.
 func (a *KEVAgent) Query(ctx context.Context, query string) (string, error) {
-	// Create a session for this query
+	// Create a unique session for this one-shot query
+	timestamp := time.Now().UnixNano()
 	sessionResp, err := a.sessionService.Create(ctx, &session.CreateRequest{
 		AppName:   "kevs-tui",
-		UserID:    "user",
-		SessionID: "session",
+		UserID:    fmt.Sprintf("query-user-%d", timestamp),
+		SessionID: fmt.Sprintf("query-session-%d", timestamp),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create session: %w", err)
@@ -227,7 +231,10 @@ func (a *KEVAgent) Query(ctx context.Context, query string) (string, error) {
 
 // Chat sends a query to the agent using a persistent session for multi-turn conversations.
 // The first call creates a session, subsequent calls reuse it for conversation context.
+// This method is safe for concurrent use.
 func (a *KEVAgent) Chat(ctx context.Context, query string) (string, error) {
+	// Lock to safely access/modify session state
+	a.mu.Lock()
 	// Create session on first call
 	if !a.hasSession {
 		sessionResp, err := a.sessionService.Create(ctx, &session.CreateRequest{
@@ -236,12 +243,17 @@ func (a *KEVAgent) Chat(ctx context.Context, query string) (string, error) {
 			SessionID: fmt.Sprintf("chat-%d", time.Now().UnixNano()),
 		})
 		if err != nil {
+			a.mu.Unlock()
 			return "", fmt.Errorf("failed to create session: %w", err)
 		}
 		a.userID = sessionResp.Session.UserID()
 		a.sessionID = sessionResp.Session.ID()
 		a.hasSession = true
 	}
+	// Capture session IDs before unlocking
+	userID := a.userID
+	sessionID := a.sessionID
+	a.mu.Unlock()
 
 	// Create user message
 	userMsg := &genai.Content{
@@ -251,9 +263,9 @@ func (a *KEVAgent) Chat(ctx context.Context, query string) (string, error) {
 		},
 	}
 
-	// Run the agent with the persistent session
+	// Run the agent with the persistent session (outside lock)
 	var response strings.Builder
-	for event, err := range a.runner.Run(ctx, a.userID, a.sessionID, userMsg, agent.RunConfig{}) {
+	for event, err := range a.runner.Run(ctx, userID, sessionID, userMsg, agent.RunConfig{}) {
 		if err != nil {
 			return "", fmt.Errorf("agent error: %w", err)
 		}
@@ -271,8 +283,11 @@ func (a *KEVAgent) Chat(ctx context.Context, query string) (string, error) {
 	return response.String(), nil
 }
 
-// ClearSession clears the current chat session, starting fresh on next Chat() call
+// ClearSession clears the current chat session, starting fresh on next Chat() call.
+// This method is safe for concurrent use.
 func (a *KEVAgent) ClearSession() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.hasSession = false
 	a.userID = ""
 	a.sessionID = ""

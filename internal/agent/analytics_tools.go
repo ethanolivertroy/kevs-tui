@@ -2,13 +2,58 @@ package agent
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/ethanolivertroy/kevs-tui/internal/model"
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 )
+
+// cveIDRegex validates CVE ID format (CVE-YYYY-NNNNN)
+var cveIDRegex = regexp.MustCompile(`^CVE-\d{4}-\d{4,}$`)
+
+// Risk score calculation constants
+const (
+	// Vendor risk score weights
+	RiskScoreBaseCVEWeight    = 2.0  // Points per CVE
+	RiskScoreBaseCap          = 30.0 // Max points from CVE count
+	RiskScoreRansomwareWeight = 5.0  // Points per ransomware CVE
+	RiskScoreRansomwareCap    = 25.0 // Max points from ransomware
+	RiskScoreOverdueWeight    = 3.0  // Points per overdue CVE
+	RiskScoreOverdueCap       = 25.0 // Max points from overdue
+	RiskScoreEPSSWeight       = 20.0 // EPSS multiplier (0-1 -> 0-20)
+	RiskScoreMaxTotal         = 100.0
+
+	// Risk priority weights
+	RiskPriorityEPSSWeight      = 40.0 // EPSS multiplier for priority
+	RiskPriorityRansomwareBonus = 30.0 // Bonus for ransomware association
+	RiskPriorityOverdueBonus    = 20.0 // Bonus for overdue status
+
+	// Risk level thresholds
+	RiskLevelCriticalThreshold = 75.0
+	RiskLevelHighThreshold     = 50.0
+	RiskLevelMediumThreshold   = 25.0
+
+	// Risk priority thresholds
+	RiskPriorityCriticalThreshold = 70.0
+	RiskPriorityHighThreshold     = 50.0
+	RiskPriorityMediumThreshold   = 25.0
+)
+
+// validateCVEID validates and normalizes a CVE ID
+func validateCVEID(input string) (string, error) {
+	cveID := strings.ToUpper(strings.TrimSpace(input))
+	if cveID == "" {
+		return "", fmt.Errorf("CVE ID is required")
+	}
+	if !cveIDRegex.MatchString(cveID) {
+		return "", fmt.Errorf("invalid CVE ID format: %s (expected CVE-YYYY-NNNNN)", input)
+	}
+	return cveID, nil
+}
 
 // --- Related CVEs Tool ---
 
@@ -57,10 +102,15 @@ func findRelatedCVEs(ctx tool.Context, params RelatedCVEsParams) (RelatedCVEsRes
 	var queryDesc string
 	var sourceCWEs []string
 	var sourceVendor, sourceProduct string
+	var sourceCVEID string // Validated CVE ID to exclude from results
 
 	// If CVE ID provided, find it first to get its attributes
 	if params.CVEID != "" {
-		cveID := strings.ToUpper(params.CVEID)
+		cveID, err := validateCVEID(params.CVEID)
+		if err != nil {
+			return RelatedCVEsResult{}, err
+		}
+		sourceCVEID = cveID
 		for _, v := range kevCache {
 			if v.CVEID == cveID {
 				sourceCWEs = v.CWEs
@@ -105,7 +155,7 @@ func findRelatedCVEs(ctx tool.Context, params RelatedCVEsParams) (RelatedCVEsRes
 	// Find related CVEs
 	for _, v := range kevCache {
 		// Skip the source CVE itself
-		if params.CVEID != "" && v.CVEID == strings.ToUpper(params.CVEID) {
+		if sourceCVEID != "" && v.CVEID == sourceCVEID {
 			continue
 		}
 
@@ -438,84 +488,76 @@ func batchAnalyze(ctx tool.Context, params BatchAnalyzeParams) (BatchAnalyzeResu
 		return BatchAnalyzeResult{}, fmt.Errorf("no CVE IDs provided")
 	}
 
-	// Build lookup map
-	cveMap := make(map[string]*struct {
-		v     *struct{ v interface{} }
-		found bool
-	})
+	// Build lookup map for O(1) lookups
+	cveMap := make(map[string]model.Vulnerability)
 	for _, v := range kevCache {
-		v := v // capture
-		cveMap[v.CVEID] = &struct {
-			v     *struct{ v interface{} }
-			found bool
-		}{}
+		cveMap[v.CVEID] = v
 	}
 
 	var analyses []BatchCVEAnalysis
 	var notFound []string
+	var invalidIDs []string
 	vendorCount := make(map[string]int)
 	cweCount := make(map[string]int)
 	var totalEPSS, maxEPSS float64
 	var overdueCount, ransomwareCount int
 	var criticalCount, highCount, mediumCount, lowCount int
 
-	for _, cveID := range params.CVEIDs {
-		cveID = strings.ToUpper(strings.TrimSpace(cveID))
-		found := false
-
-		for _, v := range kevCache {
-			if v.CVEID == cveID {
-				found = true
-				daysOverdue := 0
-				if v.IsOverdue() {
-					daysOverdue = int(time.Since(v.DueDate).Hours() / 24)
-					overdueCount++
-				}
-				if v.RansomwareUse {
-					ransomwareCount++
-				}
-
-				priority := calculateRiskPriority(v.EPSS.Score, v.IsOverdue(), v.RansomwareUse)
-				switch priority {
-				case "CRITICAL":
-					criticalCount++
-				case "HIGH":
-					highCount++
-				case "MEDIUM":
-					mediumCount++
-				case "LOW":
-					lowCount++
-				}
-
-				totalEPSS += v.EPSS.Score
-				if v.EPSS.Score > maxEPSS {
-					maxEPSS = v.EPSS.Score
-				}
-
-				vendorCount[v.VendorProject]++
-				for _, cwe := range v.CWEs {
-					cweCount[cwe]++
-				}
-
-				analyses = append(analyses, BatchCVEAnalysis{
-					CVEID:          v.CVEID,
-					Found:          true,
-					Vendor:         v.VendorProject,
-					Product:        v.Product,
-					Name:           v.VulnerabilityName,
-					EPSSScore:      v.EPSS.Score,
-					EPSSPercentile: v.EPSS.Percentile,
-					IsOverdue:      v.IsOverdue(),
-					DaysOverdue:    daysOverdue,
-					Ransomware:     v.RansomwareUse,
-					CWEs:           v.CWEs,
-					RiskPriority:   priority,
-				})
-				break
-			}
+	for _, rawCVEID := range params.CVEIDs {
+		cveID, err := validateCVEID(rawCVEID)
+		if err != nil {
+			invalidIDs = append(invalidIDs, rawCVEID)
+			continue
 		}
 
-		if !found {
+		v, found := cveMap[cveID]
+		if found {
+			daysOverdue := 0
+			if v.IsOverdue() {
+				daysOverdue = int(time.Since(v.DueDate).Hours() / 24)
+				overdueCount++
+			}
+			if v.RansomwareUse {
+				ransomwareCount++
+			}
+
+			priority := calculateRiskPriority(v.EPSS.Score, v.IsOverdue(), v.RansomwareUse)
+			switch priority {
+			case "CRITICAL":
+				criticalCount++
+			case "HIGH":
+				highCount++
+			case "MEDIUM":
+				mediumCount++
+			case "LOW":
+				lowCount++
+			}
+
+			totalEPSS += v.EPSS.Score
+			if v.EPSS.Score > maxEPSS {
+				maxEPSS = v.EPSS.Score
+			}
+
+			vendorCount[v.VendorProject]++
+			for _, cwe := range v.CWEs {
+				cweCount[cwe]++
+			}
+
+			analyses = append(analyses, BatchCVEAnalysis{
+				CVEID:          v.CVEID,
+				Found:          true,
+				Vendor:         v.VendorProject,
+				Product:        v.Product,
+				Name:           v.VulnerabilityName,
+				EPSSScore:      v.EPSS.Score,
+				EPSSPercentile: v.EPSS.Percentile,
+				IsOverdue:      v.IsOverdue(),
+				DaysOverdue:    daysOverdue,
+				Ransomware:     v.RansomwareUse,
+				CWEs:           v.CWEs,
+				RiskPriority:   priority,
+			})
+		} else {
 			notFound = append(notFound, cveID)
 			analyses = append(analyses, BatchCVEAnalysis{
 				CVEID: cveID,
@@ -745,30 +787,30 @@ func contains(slice []string, item string) bool {
 }
 
 func calculateVendorRiskScore(totalCVEs, ransomwareCVEs, overdueCVEs int, avgEPSS float64) float64 {
-	// Base score from CVE count (0-30)
-	baseScore := float64(totalCVEs) * 2
-	if baseScore > 30 {
-		baseScore = 30
+	// Base score from CVE count
+	baseScore := float64(totalCVEs) * RiskScoreBaseCVEWeight
+	if baseScore > RiskScoreBaseCap {
+		baseScore = RiskScoreBaseCap
 	}
 
-	// Ransomware penalty (0-25)
-	ransomwareScore := float64(ransomwareCVEs) * 5
-	if ransomwareScore > 25 {
-		ransomwareScore = 25
+	// Ransomware penalty
+	ransomwareScore := float64(ransomwareCVEs) * RiskScoreRansomwareWeight
+	if ransomwareScore > RiskScoreRansomwareCap {
+		ransomwareScore = RiskScoreRansomwareCap
 	}
 
-	// Overdue penalty (0-25)
-	overdueScore := float64(overdueCVEs) * 3
-	if overdueScore > 25 {
-		overdueScore = 25
+	// Overdue penalty
+	overdueScore := float64(overdueCVEs) * RiskScoreOverdueWeight
+	if overdueScore > RiskScoreOverdueCap {
+		overdueScore = RiskScoreOverdueCap
 	}
 
-	// EPSS score (0-20)
-	epssScore := avgEPSS * 20
+	// EPSS score
+	epssScore := avgEPSS * RiskScoreEPSSWeight
 
 	total := baseScore + ransomwareScore + overdueScore + epssScore
-	if total > 100 {
-		total = 100
+	if total > RiskScoreMaxTotal {
+		total = RiskScoreMaxTotal
 	}
 
 	return total
@@ -776,11 +818,11 @@ func calculateVendorRiskScore(totalCVEs, ransomwareCVEs, overdueCVEs int, avgEPS
 
 func getRiskLevel(score float64) string {
 	switch {
-	case score >= 75:
+	case score >= RiskLevelCriticalThreshold:
 		return "CRITICAL"
-	case score >= 50:
+	case score >= RiskLevelHighThreshold:
 		return "HIGH"
-	case score >= 25:
+	case score >= RiskLevelMediumThreshold:
 		return "MEDIUM"
 	default:
 		return "LOW"
@@ -788,21 +830,21 @@ func getRiskLevel(score float64) string {
 }
 
 func calculateRiskPriority(epss float64, isOverdue, isRansomware bool) string {
-	score := epss * 40 // Base from EPSS
+	score := epss * RiskPriorityEPSSWeight
 
 	if isRansomware {
-		score += 30
+		score += RiskPriorityRansomwareBonus
 	}
 	if isOverdue {
-		score += 20
+		score += RiskPriorityOverdueBonus
 	}
 
 	switch {
-	case score >= 70:
+	case score >= RiskPriorityCriticalThreshold:
 		return "CRITICAL"
-	case score >= 50:
+	case score >= RiskPriorityHighThreshold:
 		return "HIGH"
-	case score >= 25:
+	case score >= RiskPriorityMediumThreshold:
 		return "MEDIUM"
 	default:
 		return "LOW"
@@ -908,9 +950,9 @@ type GitHubPoCInfo struct {
 }
 
 func checkExploitAvailability(ctx tool.Context, params ExploitCheckParams) (ExploitCheckResult, error) {
-	cveID := strings.ToUpper(strings.TrimSpace(params.CVEID))
-	if cveID == "" {
-		return ExploitCheckResult{}, fmt.Errorf("CVE ID is required")
+	cveID, err := validateCVEID(params.CVEID)
+	if err != nil {
+		return ExploitCheckResult{}, err
 	}
 
 	// Fetch exploit info
@@ -988,9 +1030,9 @@ type RefInfo struct {
 }
 
 func checkPatchStatus(ctx tool.Context, params PatchCheckParams) (PatchCheckResult, error) {
-	cveID := strings.ToUpper(strings.TrimSpace(params.CVEID))
-	if cveID == "" {
-		return PatchCheckResult{}, fmt.Errorf("CVE ID is required")
+	cveID, err := validateCVEID(params.CVEID)
+	if err != nil {
+		return PatchCheckResult{}, err
 	}
 
 	result := PatchCheckResult{

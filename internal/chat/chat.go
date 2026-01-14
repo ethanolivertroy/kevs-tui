@@ -365,20 +365,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+// sanitizeForPrompt removes characters that could enable prompt injection
+func sanitizeForPrompt(s string) string {
+	// Remove newlines that could break prompt structure
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	// Replace brackets that could inject fake context markers
+	s = strings.ReplaceAll(s, "[", "(")
+	s = strings.ReplaceAll(s, "]", ")")
+	// Collapse multiple spaces
+	for strings.Contains(s, "  ") {
+		s = strings.ReplaceAll(s, "  ", " ")
+	}
+	return strings.TrimSpace(s)
+}
+
 // buildEnrichedQuery adds CVE context to a query if available
 func buildEnrichedQuery(currentCVE *model.VulnerabilityItem, query string) string {
 	if currentCVE == nil {
 		return query
 	}
 
+	// Sanitize all CVE data to prevent prompt injection
 	return fmt.Sprintf(
 		"[Context: User is viewing %s - %s (%s, %s). EPSS: %.0f%%, Due: %s]\n\n%s",
-		currentCVE.CVEID,
-		currentCVE.VulnerabilityName,
-		currentCVE.VendorProject,
-		currentCVE.Product,
+		sanitizeForPrompt(currentCVE.CVEID),
+		sanitizeForPrompt(currentCVE.VulnerabilityName),
+		sanitizeForPrompt(currentCVE.VendorProject),
+		sanitizeForPrompt(currentCVE.Product),
 		currentCVE.EPSS.Score*100,
-		currentCVE.DueDateStatus(),
+		sanitizeForPrompt(currentCVE.DueDateStatus()),
 		query,
 	)
 }

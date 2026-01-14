@@ -11,19 +11,43 @@ import (
 	"github.com/ethanolivertroy/kevs-tui/internal/llm"
 )
 
+// getProviderSetupHelp returns setup instructions for the specified LLM provider
+func getProviderSetupHelp(provider string) string {
+	switch provider {
+	case "gemini", "":
+		return `For Gemini (default), set:
+  export GEMINI_API_KEY=your-api-key
+
+For Ollama (local), set:
+  export LLM_PROVIDER=ollama
+  ollama serve`
+	case "vertex":
+		return `For Vertex AI, set:
+  export LLM_PROVIDER=vertex
+  export VERTEX_PROJECT=your-gcp-project
+  export VERTEX_LOCATION=us-central1`
+	case "ollama":
+		return `For Ollama, ensure the server is running:
+  ollama serve
+
+Optionally set custom URL:
+  export OLLAMA_URL=http://localhost:11434`
+	case "openrouter":
+		return `For OpenRouter, set:
+  export LLM_PROVIDER=openrouter
+  export OPENROUTER_API_KEY=your-api-key`
+	default:
+		return `Configure LLM_PROVIDER and required credentials.
+Supported providers: gemini, vertex, ollama, openrouter`
+	}
+}
+
 // RunAgent runs the agent mode - interactive TUI if no args, one-shot if query provided
 func RunAgent(args []string) error {
 	// Validate LLM config
 	cfg := llm.ConfigFromEnv()
 	if err := cfg.Validate(); err != nil {
-		provider := cfg.Provider
-		if provider == "" {
-			provider = "gemini"
-		}
-		if provider == "gemini" {
-			return fmt.Errorf("LLM configuration error: %w\n\nFor Gemini, set:\n  export GEMINI_API_KEY=your-api-key\n\nFor Ollama (local), set:\n  export LLM_PROVIDER=ollama", err)
-		}
-		return fmt.Errorf("LLM configuration error: %w", err)
+		return fmt.Errorf("LLM configuration error: %w\n\n%s", err, getProviderSetupHelp(cfg.Provider))
 	}
 
 	ctx := context.Background()

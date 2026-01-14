@@ -43,9 +43,9 @@ type EPSSData struct {
 
 // NVDResponse represents the response from the NVD CVE API
 type NVDResponse struct {
-	ResultsPerPage  int             `json:"resultsPerPage"`
-	StartIndex      int             `json:"startIndex"`
-	TotalResults    int             `json:"totalResults"`
+	ResultsPerPage  int              `json:"resultsPerPage"`
+	StartIndex      int              `json:"startIndex"`
+	TotalResults    int              `json:"totalResults"`
 	Vulnerabilities []NVDVulnWrapper `json:"vulnerabilities"`
 }
 
@@ -83,10 +83,10 @@ type CVSSMetricV30 struct {
 
 // CVSSMetricV2 represents CVSS v2.0 metric data
 type CVSSMetricV2 struct {
-	Source          string     `json:"source"`
-	Type            string     `json:"type"`
-	CVSSData        CVSSDataV2 `json:"cvssData"`
-	BaseSeverity    string     `json:"baseSeverity"`
+	Source       string     `json:"source"`
+	Type         string     `json:"type"`
+	CVSSData     CVSSDataV2 `json:"cvssData"`
+	BaseSeverity string     `json:"baseSeverity"`
 }
 
 // CVSSData represents CVSS v3.x score data

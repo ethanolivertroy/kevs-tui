@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Colors
+// Colors (theme-aware - updated by theme.go)
 var (
 	PrimaryColor    = lipgloss.Color("#7D56F4")
 	SecondaryColor  = lipgloss.Color("#04B575")
@@ -19,7 +19,13 @@ var (
 	EPSSHighColor   = lipgloss.Color("#FF5F56")
 	EPSSMedColor    = lipgloss.Color("#FFCC00")
 	EPSSLowColor    = lipgloss.Color("#04B575")
+	URLColor        = lipgloss.Color("#00BFFF")
+	CWEColor        = lipgloss.Color("#DDA0DD")
 	// CVSS severity colors
+	CriticalColor     = lipgloss.Color("#9B0000")
+	HighColor         = lipgloss.Color("#FF5F56")
+	MediumColor       = lipgloss.Color("#FFCC00")
+	LowColor          = lipgloss.Color("#04B575")
 	CVSSCriticalColor = lipgloss.Color("#9B0000")
 	CVSSHighColor     = lipgloss.Color("#FF5F56")
 	CVSSMediumColor   = lipgloss.Color("#FFCC00")
@@ -87,6 +93,11 @@ var (
 	DimmedItemStyle = lipgloss.NewStyle().
 			Foreground(SubtleColor).
 			PaddingLeft(2)
+
+	// Text selection style
+	SelectionStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("#5A4BA3")).
+			Foreground(lipgloss.Color("#FFFFFF"))
 )
 
 // RansomwareBadgeText returns a formatted ransomware badge

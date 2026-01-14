@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/ethanolivertroy/kevs-tui/internal/api"
 	"github.com/ethanolivertroy/kevs-tui/internal/model"
 )
@@ -30,7 +31,11 @@ const (
 	ViewCWE
 	ViewRisk
 	ViewExportMenu
+	ViewExportConfirm // Confirmation before export
 )
+
+// OpenAgentMsg is sent when the user requests to open the agent
+type OpenAgentMsg struct{}
 
 // ChartOption represents a chart in the charts menu
 type ChartOption struct {
@@ -75,29 +80,29 @@ const (
 
 // Model is the main application model
 type Model struct {
-	list           list.Model
-	allVulns       []model.Vulnerability
-	filteredVulns  []list.Item
-	spinner        spinner.Model
-	loading        bool
-	loadingEPSS    bool
-	loadingCVSS    bool
-	err            error
-	width          int
-	height         int
-	view           ViewState
-	selectedVuln   *model.VulnerabilityItem
-	selectedCVSS   *model.CVSSData
-	apiClient      *api.Client
-	keys           KeyMap
-	help           help.Model
-	showHelp       bool
-	viewport       viewport.Model
-	viewportReady  bool
-	sortMode       SortMode
-	filterMode     FilterMode
-	stats          Stats
-	statusMsg      string
+	list          list.Model
+	allVulns      []model.Vulnerability
+	filteredVulns []list.Item
+	spinner       spinner.Model
+	loading       bool
+	loadingEPSS   bool
+	loadingCVSS   bool
+	err           error
+	width         int
+	height        int
+	view          ViewState
+	selectedVuln  *model.VulnerabilityItem
+	selectedCVSS  *model.CVSSData
+	apiClient     *api.Client
+	keys          KeyMap
+	help          help.Model
+	showHelp      bool
+	viewport      viewport.Model
+	viewportReady bool
+	sortMode      SortMode
+	filterMode    FilterMode
+	stats         Stats
+	statusMsg     string
 	// Vendor chart state
 	vendorList          []VendorStats
 	selectedVendorIndex int
@@ -108,6 +113,21 @@ type Model struct {
 	// Export menu state
 	exportOptions       []ExportOption
 	selectedExportIndex int
+	// Pending export (for confirmation)
+	pendingExport *PendingExport
+	// Text selection for detail view
+	selecting    bool
+	selStartLine int
+	selStartCol  int
+	selEndLine   int
+	selEndCol    int
+}
+
+// PendingExport holds export details awaiting confirmation
+type PendingExport struct {
+	Vulns  []model.Vulnerability
+	Format ExportFormat
+	Count  int
 }
 
 // Stats holds statistics about the vulnerabilities
@@ -225,6 +245,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "?":
 			m.showHelp = !m.showHelp
 			return m, nil
+		case "ctrl+k":
+			// Signal to open agent (handled by wrapper in main.go)
+			return m, func() tea.Msg { return OpenAgentMsg{} }
 		}
 
 		// If in list view and not filtering
@@ -241,12 +264,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.viewport = viewport.New(m.width-4, m.height-6)
 					m.viewport.SetContent(m.renderDetailContent())
 					m.viewportReady = true
-					return m, tea.Batch(m.spinner.Tick, m.fetchCVSS(item.CVEID))
+					// Notify chat panel of CVE selection for context-aware queries
+					cveMsg := func() tea.Msg { return model.CVESelectedMsg{CVE: &item} }
+					return m, tea.Batch(m.spinner.Tick, m.fetchCVSS(item.CVEID), cveMsg)
 				}
 			case "s":
 				m.sortMode = (m.sortMode + 1) % 4
 				m.applySortAndFilter()
-				m.list.SetItems(m.filteredVulns)
 				m.statusMsg = fmt.Sprintf("Sorted by: %s", m.sortMode.String())
 				return m, nil
 			case "r":
@@ -258,7 +282,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.statusMsg = "Showing ransomware only"
 				}
 				m.applySortAndFilter()
-				m.list.SetItems(m.filteredVulns)
 				return m, nil
 			case "d":
 				if m.filterMode == FilterOverdue {
@@ -269,7 +292,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.statusMsg = "Showing overdue only"
 				}
 				m.applySortAndFilter()
-				m.list.SetItems(m.filteredVulns)
+				return m, nil
+			case "t":
+				newTheme := CycleTheme()
+				// Update list styles with new theme colors
+				m.list.Styles.Title = TitleStyle
+				m.list.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(PrimaryColor)
+				m.list.Styles.FilterCursor = lipgloss.NewStyle().Foreground(PrimaryColor)
+				// Recreate delegate with new theme colors
+				m.list.SetDelegate(NewVulnDelegate())
+				m.statusMsg = fmt.Sprintf("Theme: %s", newTheme)
 				return m, nil
 			case "o":
 				if item, ok := m.list.SelectedItem().(model.VulnerabilityItem); ok {
@@ -287,22 +319,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedChartIndex = 0
 				m.view = ViewChartsMenu
 				return m, nil
-			case "G":
-				// Jump to end of list (vim style)
-				if len(m.list.Items()) > 0 {
-					m.list.Select(len(m.list.Items()) - 1)
-				}
-				return m, nil
-			case "home", "t":
-				// Jump to start of list
-				m.list.Select(0)
-				return m, nil
-			case "end", "b":
-				// Jump to end of list
-				if len(m.list.Items()) > 0 {
-					m.list.Select(len(m.list.Items()) - 1)
-				}
-				return m, nil
 			case "x":
 				m.selectedExportIndex = 0
 				m.view = ViewExportMenu
@@ -316,7 +332,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q", "esc", "backspace":
 				m.view = ViewList
 				m.selectedVuln = nil
-				return m, nil
+				m.clearSelection() // Clear text selection
+				// Clear CVE context in chat panel
+				return m, func() tea.Msg { return model.CVESelectedMsg{CVE: nil} }
 			case "o":
 				if m.selectedVuln != nil {
 					openURL(m.selectedVuln.NVDURL())
@@ -397,14 +415,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					vulns = m.allVulns
 				}
 
-				// Export to current directory
-				result := Export(vulns, selected.Format, ".")
-				if result.Err != nil {
-					m.statusMsg = fmt.Sprintf("Export failed: %v", result.Err)
-				} else {
-					m.statusMsg = fmt.Sprintf("Exported %d CVEs to %s", result.Count, result.FilePath)
+				// Store pending export and show confirmation
+				m.pendingExport = &PendingExport{
+					Vulns:  vulns,
+					Format: selected.Format,
+					Count:  len(vulns),
 				}
+				m.view = ViewExportConfirm
+				return m, nil
+			}
+		}
+
+		// If in export confirmation view
+		if m.view == ViewExportConfirm {
+			switch msg.String() {
+			case "y", "Y", "enter":
+				// Perform the export
+				if m.pendingExport != nil {
+					result := Export(m.pendingExport.Vulns, m.pendingExport.Format, ".")
+					if result.Err != nil {
+						m.statusMsg = fmt.Sprintf("Export failed: %v", result.Err)
+					} else {
+						m.statusMsg = fmt.Sprintf("Exported %d CVEs to %s", result.Count, result.FilePath)
+					}
+				}
+				m.pendingExport = nil
 				m.view = ViewList
+				return m, nil
+			case "n", "N", "esc", "q":
+				// Cancel export
+				m.pendingExport = nil
+				m.view = ViewExportMenu
 				return m, nil
 			}
 		}
@@ -568,6 +609,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loadingEPSS = false
 		m.err = msg.Err
 		return m, nil
+
+	case tea.MouseMsg:
+		// Only handle in detail view
+		if m.view != ViewDetail {
+			return m, nil
+		}
+
+		// Wheel events for scrolling
+		if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+			m.clearSelection()
+			if m.viewportReady {
+				var cmd tea.Cmd
+				m.viewport, cmd = m.viewport.Update(msg)
+				return m, cmd
+			}
+			return m, nil
+		}
+
+		// Start selection on left click
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			line, col := m.screenToContent(msg.X, msg.Y)
+			m.selecting = true
+			m.selStartLine, m.selStartCol = line, col
+			m.selEndLine, m.selEndCol = line, col
+			m.refreshDetailViewport()
+			return m, nil
+		}
+
+		// Update selection during drag
+		if msg.Action == tea.MouseActionMotion && m.selecting {
+			line, col := m.screenToContent(msg.X, msg.Y)
+			m.selEndLine, m.selEndCol = line, col
+			m.refreshDetailViewport()
+			return m, nil
+		}
+
+		// End selection on release
+		if msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft {
+			m.selecting = false
+			return m, nil
+		}
+
+		return m, nil
 	}
 
 	// Update list if in list view
@@ -678,6 +762,10 @@ func (m Model) View() string {
 		return m.renderExportMenu()
 	}
 
+	if m.view == ViewExportConfirm {
+		return m.renderExportConfirm()
+	}
+
 	if m.view == ViewVendorChart {
 		return RenderVendorChartWithSelection(m.allVulns, m.width, m.height, m.selectedVendorIndex)
 	}
@@ -744,6 +832,65 @@ func (m Model) renderExportMenu() string {
 	b.WriteString(footerStyle.Render("j/k navigate • enter export • x/esc back"))
 
 	return b.String()
+}
+
+func (m Model) renderExportConfirm() string {
+	if m.pendingExport == nil {
+		return "No export pending"
+	}
+
+	var b strings.Builder
+
+	// Dialog box with rounded border
+	dialogStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(PrimaryColor).
+		Padding(1, 2)
+
+	// Title
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(PrimaryColor)
+	b.WriteString(titleStyle.Render("Confirm Export"))
+	b.WriteString("\n\n")
+
+	// Details
+	b.WriteString(fmt.Sprintf("Format: %s\n", m.pendingExport.Format.String()))
+	b.WriteString(fmt.Sprintf("Items: %d CVEs\n", m.pendingExport.Count))
+	b.WriteString("\n")
+
+	// Buttons
+	yesStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#FFFFFF")).
+		Background(SecondaryColor).
+		Padding(0, 2)
+	noStyle := lipgloss.NewStyle().
+		Foreground(SubtleColor).
+		Padding(0, 2)
+
+	b.WriteString(yesStyle.Render("Y - Export"))
+	b.WriteString("  ")
+	b.WriteString(noStyle.Render("N - Cancel"))
+
+	// Center the dialog
+	dialog := dialogStyle.Render(b.String())
+
+	// Position in center of screen
+	padTop := (m.height - lipgloss.Height(dialog)) / 3
+	padLeft := (m.width - lipgloss.Width(dialog)) / 2
+
+	if padTop < 0 {
+		padTop = 0
+	}
+	if padLeft < 0 {
+		padLeft = 0
+	}
+
+	return lipgloss.NewStyle().
+		PaddingTop(padTop).
+		PaddingLeft(padLeft).
+		Render(dialog)
 }
 
 func (m Model) renderChartsMenu() string {
@@ -831,7 +978,7 @@ func (m Model) renderListView() string {
 	if m.showHelp {
 		b.WriteString(m.help.View(m.keys))
 	} else {
-		helpText := "/ filter • s sort • r ransomware • d overdue • g graphs • x export • t top • b bottom • q quit"
+		helpText := "/ filter • s sort • r ransomware • d overdue • g graphs • x export • ctrl+k KEVin • q quit"
 		b.WriteString(SubtitleStyle.Render(helpText))
 	}
 
@@ -873,37 +1020,61 @@ func (m Model) renderDetailView() string {
 
 func (m Model) renderDetailContent() string {
 	v := m.selectedVuln
+	if v == nil {
+		return "No vulnerability selected"
+	}
 	var b strings.Builder
 
 	// Title
-	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Render(v.VulnerabilityName))
+	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF"))
+	b.WriteString(titleStyle.Render(v.VulnerabilityName))
 	b.WriteString("\n\n")
 
-	// Fields
-	fields := []struct {
-		label string
-		value string
-	}{
-		{"Vendor", v.VendorProject},
-		{"Product", v.Product},
-		{"Date Added", v.DateAdded.Format("2006-01-02")},
-		{"Due Date", v.DueDate.Format("2006-01-02")},
-		{"Status", v.DueDateStatus()},
-		{"NVD URL", v.NVDURL()},
+	// Build rows for main info table
+	var rows [][]string
+
+	if v.VendorProject != "" {
+		rows = append(rows, []string{"Vendor", v.VendorProject})
+	}
+	if v.Product != "" {
+		rows = append(rows, []string{"Product", v.Product})
+	}
+	if !v.DateAdded.IsZero() {
+		rows = append(rows, []string{"Date Added", v.DateAdded.Format("2006-01-02")})
+	}
+	if !v.DueDate.IsZero() {
+		status := v.DueDateStatus()
+		if v.IsOverdue() {
+			status = lipgloss.NewStyle().Foreground(OverdueColor).Bold(true).Render(status)
+		}
+		rows = append(rows, []string{"Due Date", v.DueDate.Format("2006-01-02")})
+		rows = append(rows, []string{"Status", status})
 	}
 
-	for _, f := range fields {
-		if f.value != "" && f.value != "0001-01-01" {
-			b.WriteString(LabelStyle.Render(f.label + ":"))
-			if strings.HasPrefix(f.value, "http") {
-				b.WriteString(URLStyle.Render(f.value))
-			} else if f.label == "Status" && v.IsOverdue() {
-				b.WriteString(lipgloss.NewStyle().Foreground(OverdueColor).Bold(true).Render(f.value))
-			} else {
-				b.WriteString(ValueStyle.Render(f.value))
-			}
-			b.WriteString("\n")
-		}
+	// Render info table with rounded borders
+	if len(rows) > 0 {
+		t := table.New().
+			Border(lipgloss.RoundedBorder()).
+			BorderStyle(lipgloss.NewStyle().Foreground(PrimaryColor)).
+			StyleFunc(func(row, col int) lipgloss.Style {
+				if col == 0 {
+					return lipgloss.NewStyle().Bold(true).Foreground(SecondaryColor).PaddingRight(2)
+				}
+				return lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+			}).
+			Rows(rows...)
+
+		b.WriteString(t.Render())
+		b.WriteString("\n")
+	}
+
+	// NVD URL (outside table for clickability hint)
+	if url := v.NVDURL(); url != "" {
+		b.WriteString(LabelStyle.Render("NVD URL: "))
+		b.WriteString(URLStyle.Render(url))
+		b.WriteString(" ")
+		b.WriteString(SubtitleStyle.Render("(o to open)"))
+		b.WriteString("\n")
 	}
 
 	// EPSS
@@ -1044,4 +1215,143 @@ func extractCWENumber(cwe string) string {
 		return cwe
 	}
 	return ""
+}
+
+// Text selection helper functions
+
+// screenToContent converts screen coordinates to content line/column
+func (m Model) screenToContent(screenX, screenY int) (line, col int) {
+	// Account for header area in detail view
+	viewportStartY := 4 // Title + padding
+
+	relativeY := screenY - viewportStartY
+	if relativeY < 0 {
+		relativeY = 0
+	}
+	line = relativeY + m.viewport.YOffset
+
+	col = screenX - 2
+	if col < 0 {
+		col = 0
+	}
+	return line, col
+}
+
+// clearSelection clears the current text selection
+func (m *Model) clearSelection() {
+	m.selecting = false
+	m.selStartLine, m.selStartCol = 0, 0
+	m.selEndLine, m.selEndCol = 0, 0
+}
+
+// hasSelection returns true if there is an active selection
+func (m Model) hasSelection() bool {
+	return m.selStartLine != m.selEndLine || m.selStartCol != m.selEndCol
+}
+
+// refreshDetailViewport updates the viewport with selection highlighting
+func (m *Model) refreshDetailViewport() {
+	if m.viewportReady && m.selectedVuln != nil {
+		content := m.renderDetailContent()
+		if m.hasSelection() {
+			content = m.applySelectionHighlight(content)
+		}
+		m.viewport.SetContent(content)
+	}
+}
+
+// normalizeSelection ensures start is before end
+func (m Model) normalizeSelection() (startLine, startCol, endLine, endCol int) {
+	if m.selStartLine < m.selEndLine ||
+		(m.selStartLine == m.selEndLine && m.selStartCol <= m.selEndCol) {
+		return m.selStartLine, m.selStartCol, m.selEndLine, m.selEndCol
+	}
+	return m.selEndLine, m.selEndCol, m.selStartLine, m.selStartCol
+}
+
+// applySelectionHighlight applies selection styling to content (ANSI-aware)
+func (m Model) applySelectionHighlight(content string) string {
+	lines := strings.Split(content, "\n")
+
+	// Normalize selection (start before end)
+	startLine, startCol, endLine, endCol := m.normalizeSelection()
+
+	for i := startLine; i <= endLine && i < len(lines); i++ {
+		line := lines[i]
+
+		// Calculate selection bounds for this line
+		selStart := 0
+		selEnd := visibleLength(line)
+
+		if i == startLine {
+			selStart = startCol
+		}
+		if i == endLine {
+			selEnd = endCol
+		}
+
+		// Use ANSI-aware slicing
+		lines[i] = ansiSliceWithHighlight(line, selStart, selEnd)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// visibleLength returns the visible character count excluding ANSI escape sequences
+func visibleLength(s string) int {
+	count := 0
+	inEscape := false
+	for _, r := range s {
+		if r == '\x1b' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+				inEscape = false
+			}
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+// ansiSliceWithHighlight applies highlight to a portion of an ANSI-styled string
+// It preserves all ANSI escape sequences while only highlighting visible characters
+func ansiSliceWithHighlight(s string, start, end int) string {
+	var result strings.Builder
+	visiblePos := 0
+	inEscape := false
+	var escapeSeq strings.Builder
+
+	for _, r := range s {
+		if r == '\x1b' {
+			inEscape = true
+			escapeSeq.Reset()
+			escapeSeq.WriteRune(r)
+			continue
+		}
+
+		if inEscape {
+			escapeSeq.WriteRune(r)
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+				// End of escape sequence - write it through unchanged
+				result.WriteString(escapeSeq.String())
+				inEscape = false
+			}
+			continue
+		}
+
+		// Regular visible character
+		if visiblePos >= start && visiblePos < end {
+			// Inside selection - apply highlight
+			result.WriteString(SelectionStyle.Render(string(r)))
+		} else {
+			result.WriteRune(r)
+		}
+		visiblePos++
+	}
+
+	return result.String()
 }

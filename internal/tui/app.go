@@ -322,14 +322,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "o":
 				if item, ok := m.list.SelectedItem().(model.VulnerabilityItem); ok {
-					openURL(item.NVDURL())
-					m.statusMsg = "Opening in browser..."
+					if err := openURL(item.NVDURL()); err != nil {
+						m.statusMsg = fmt.Sprintf("Error opening URL: %v", err)
+					} else {
+						m.statusMsg = "Opening in browser..."
+					}
 					return m, nil
 				}
 			case "c":
 				if item, ok := m.list.SelectedItem().(model.VulnerabilityItem); ok {
-					copyToClipboard(item.CVEID)
-					m.statusMsg = fmt.Sprintf("Copied: %s", item.CVEID)
+					if err := copyToClipboard(item.CVEID); err != nil {
+						m.statusMsg = fmt.Sprintf("Error copying: %v", err)
+					} else {
+						m.statusMsg = fmt.Sprintf("Copied: %s", item.CVEID)
+					}
 					return m, nil
 				}
 			case "g":
@@ -354,22 +360,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg { return model.CVESelectedMsg{CVE: nil} }
 			case "o":
 				if m.selectedVuln != nil {
-					openURL(m.selectedVuln.NVDURL())
-					m.statusMsg = "Opening NVD..."
+					if err := openURL(m.selectedVuln.NVDURL()); err != nil {
+						m.statusMsg = fmt.Sprintf("Error opening URL: %v", err)
+					} else {
+						m.statusMsg = "Opening NVD..."
+					}
 					return m, nil
 				}
 			case "c":
 				if m.selectedVuln != nil {
-					copyToClipboard(m.selectedVuln.CVEID)
-					m.statusMsg = fmt.Sprintf("Copied: %s", m.selectedVuln.CVEID)
+					if err := copyToClipboard(m.selectedVuln.CVEID); err != nil {
+						m.statusMsg = fmt.Sprintf("Error copying: %v", err)
+					} else {
+						m.statusMsg = fmt.Sprintf("Copied: %s", m.selectedVuln.CVEID)
+					}
 					return m, nil
 				}
 			case "w":
 				if m.selectedVuln != nil && len(m.selectedVuln.CWEs) > 0 {
 					cweID := extractCWENumber(m.selectedVuln.CWEs[0])
 					if cweID != "" {
-						openURL("http://cwe.mitre.org/data/definitions/" + cweID + ".html")
-						m.statusMsg = "Opening CWE..."
+						if err := openURL("http://cwe.mitre.org/data/definitions/" + cweID + ".html"); err != nil {
+							m.statusMsg = fmt.Sprintf("Error opening CWE: %v", err)
+						} else {
+							m.statusMsg = "Opening CWE..."
+						}
 					}
 					return m, nil
 				}
@@ -1190,7 +1205,9 @@ func (m Model) renderDetailContent() string {
 }
 
 // Helper functions
-func openURL(url string) {
+
+// openURL opens a URL in the default browser, returning any error encountered
+func openURL(url string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
@@ -1200,12 +1217,13 @@ func openURL(url string) {
 	case "windows":
 		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
 	default:
-		return
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
-	_ = cmd.Start()
+	return cmd.Start()
 }
 
-func copyToClipboard(text string) {
+// copyToClipboard copies text to the system clipboard, returning any error encountered
+func copyToClipboard(text string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
@@ -1215,10 +1233,10 @@ func copyToClipboard(text string) {
 	case "windows":
 		cmd = exec.Command("clip")
 	default:
-		return
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
 	cmd.Stdin = strings.NewReader(text)
-	_ = cmd.Run()
+	return cmd.Run()
 }
 
 // extractCWENumber extracts the numeric ID from a CWE string like "CWE-611"

@@ -11,7 +11,7 @@ import (
 )
 
 // RunServe starts the A2A server for the KEVin agent
-func RunServe(port int) error {
+func RunServe(port int, host string) error {
 	// Validate LLM config
 	llmCfg := llm.ConfigFromEnv()
 	if err := llmCfg.Validate(); err != nil {
@@ -34,6 +34,7 @@ func RunServe(port int) error {
 	// Configure and start server
 	cfg := server.A2AConfig{
 		Port:      port,
+		Host:      host,
 		LLMConfig: llmCfg,
 	}
 

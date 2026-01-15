@@ -18,13 +18,19 @@ import (
 // A2AConfig holds configuration for the A2A server
 type A2AConfig struct {
 	Port      int
+	Host      string // Bind address (default "127.0.0.1" for localhost-only)
 	LLMConfig llm.Config
 }
 
 // ConfigFromEnv creates an A2AConfig from environment variables
 func ConfigFromEnv() A2AConfig {
+	host := os.Getenv("A2A_HOST")
+	if host == "" {
+		host = "127.0.0.1" // Default to localhost-only for security
+	}
 	return A2AConfig{
 		Port:      8001, // Default port
+		Host:      host,
 		LLMConfig: llm.ConfigFromEnv(),
 	}
 }
@@ -45,21 +51,34 @@ func RunA2AServer(ctx context.Context, cfg A2AConfig) error {
 	// Get the underlying ADK agent
 	adkAgent := kevAgent.Agent()
 
+	// Default host to localhost if not set
+	if cfg.Host == "" {
+		cfg.Host = "127.0.0.1"
+	}
+
 	// Create the web launcher with A2A support
 	webLauncher := web.NewLauncher(a2a.NewLauncher())
 
-	// Parse command line args (we override with our port)
+	// Parse command line args (we override with our port and host)
 	args := []string{
 		"--port", fmt.Sprintf("%d", cfg.Port),
+		"--host", cfg.Host,
 	}
 	if _, err := webLauncher.Parse(args); err != nil {
 		return fmt.Errorf("failed to parse launcher args: %w", err)
 	}
 
+	// Print security warning if binding to non-localhost
+	if cfg.Host != "127.0.0.1" && cfg.Host != "localhost" {
+		fmt.Println("⚠️  SECURITY WARNING: Server binding to non-localhost address")
+		fmt.Println("⚠️  This server has NO AUTHENTICATION - do not expose to untrusted networks")
+		fmt.Println()
+	}
+
 	// Print startup info
-	fmt.Printf("KEVin A2A Server starting on port %d\n", cfg.Port)
-	fmt.Printf("Agent card: http://localhost:%d/.well-known/agent-card.json\n", cfg.Port)
-	fmt.Printf("A2A endpoint: http://localhost:%d/a2a\n", cfg.Port)
+	fmt.Printf("KEVin A2A Server starting on %s:%d\n", cfg.Host, cfg.Port)
+	fmt.Printf("Agent card: http://%s:%d/.well-known/agent-card.json\n", cfg.Host, cfg.Port)
+	fmt.Printf("A2A endpoint: http://%s:%d/a2a\n", cfg.Host, cfg.Port)
 	fmt.Printf("LLM Provider: %s (%s)\n", cfg.LLMConfig.Provider, cfg.LLMConfig.Model)
 	fmt.Println()
 

@@ -396,8 +396,9 @@ Examples:
   kevs-tui                           # Browser with agent sidebar
   kevs-tui agent                     # Interactive agent chat
   kevs-tui agent "Microsoft vulns"   # One-shot query
-  kevs-tui serve                     # Start A2A server on port 8001
+  kevs-tui serve                     # Start A2A server on localhost:8001
   kevs-tui serve --port 9000         # Start A2A server on custom port
+  kevs-tui serve --host 0.0.0.0      # Bind to all interfaces (INSECURE)
 
 Environment:
   LLM_PROVIDER      LLM provider: gemini (default), vertex, or ollama
@@ -429,9 +430,10 @@ func main() {
 		// Parse serve-specific flags
 		serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
 		port := serveCmd.Int("port", 8001, "Port for A2A server")
+		host := serveCmd.String("host", "127.0.0.1", "Host to bind (use 0.0.0.0 for all interfaces - INSECURE)")
 		serveCmd.Parse(os.Args[2:])
 
-		if err := cmd.RunServe(*port); err != nil {
+		if err := cmd.RunServe(*port, *host); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ethanolivertroy/kevs-tui/internal/model"
@@ -15,11 +16,16 @@ const (
 	kevURL  = "https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json"
 	epssURL = "https://api.first.org/data/v1/epss"
 	nvdURL  = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+
+	// minRequestInterval limits API requests to 10/sec max to avoid rate limiting
+	minRequestInterval = 100 * time.Millisecond
 )
 
 // Client handles API requests to the KEV data source
 type Client struct {
-	httpClient *http.Client
+	httpClient  *http.Client
+	mu          sync.Mutex
+	lastRequest time.Time
 }
 
 // NewClient creates a new API client with default settings
@@ -31,9 +37,22 @@ func NewClient() *Client {
 	}
 }
 
+// rateLimitedGet performs a rate-limited HTTP GET request
+func (c *Client) rateLimitedGet(url string) (*http.Response, error) {
+	c.mu.Lock()
+	elapsed := time.Since(c.lastRequest)
+	if elapsed < minRequestInterval {
+		time.Sleep(minRequestInterval - elapsed)
+	}
+	c.lastRequest = time.Now()
+	c.mu.Unlock()
+
+	return c.httpClient.Get(url)
+}
+
 // FetchVulnerabilities fetches all vulnerabilities from the KEV catalog
 func (c *Client) FetchVulnerabilities() ([]model.Vulnerability, error) {
-	resp, err := c.httpClient.Get(kevURL)
+	resp, err := c.rateLimitedGet(kevURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch KEV data: %w", err)
 	}
@@ -91,7 +110,7 @@ func (c *Client) FetchEPSSScores(cveIDs []string) (map[string]model.EPSSScore, e
 		chunk := cveIDs[i:end]
 
 		url := fmt.Sprintf("%s?cve=%s", epssURL, strings.Join(chunk, ","))
-		resp, err := c.httpClient.Get(url)
+		resp, err := c.rateLimitedGet(url)
 		if err != nil {
 			// Don't fail completely, just skip EPSS data
 			continue
@@ -125,7 +144,7 @@ func (c *Client) FetchEPSSScores(cveIDs []string) (map[string]model.EPSSScore, e
 // FetchCVSS fetches CVSS scores from NVD for a single CVE
 func (c *Client) FetchCVSS(cveID string) (model.CVSSScore, error) {
 	url := fmt.Sprintf("%s?cveId=%s", nvdURL, cveID)
-	resp, err := c.httpClient.Get(url)
+	resp, err := c.rateLimitedGet(url)
 	if err != nil {
 		return model.CVSSScore{}, fmt.Errorf("failed to fetch NVD data: %w", err)
 	}
@@ -189,7 +208,7 @@ func (c *Client) FetchCVSS(cveID string) (model.CVSSScore, error) {
 // FetchCVSSAll fetches all CVSS assessments (NVD + CNA) from NVD for a single CVE
 func (c *Client) FetchCVSSAll(cveID string) (model.CVSSData, error) {
 	url := fmt.Sprintf("%s?cveId=%s", nvdURL, cveID)
-	resp, err := c.httpClient.Get(url)
+	resp, err := c.rateLimitedGet(url)
 	if err != nil {
 		return model.CVSSData{}, fmt.Errorf("failed to fetch NVD data: %w", err)
 	}

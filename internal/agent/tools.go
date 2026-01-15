@@ -3,7 +3,9 @@ package agent
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ethanolivertroy/kevs-tui/internal/api"
@@ -13,42 +15,58 @@ import (
 	"google.golang.org/adk/tool/functiontool"
 )
 
-// Shared API client and cached data
+// Shared API client and cached data (protected by sync.Once for thread-safe initialization)
 var (
-	apiClient *api.Client
-	kevCache  []model.Vulnerability
+	apiClient    *api.Client
+	kevCache     []model.Vulnerability
+	kevCacheOnce sync.Once
+	kevCacheErr  error
 )
 
 func init() {
 	apiClient = api.NewClient()
 }
 
-// ensureKEVData fetches KEV data and EPSS scores if not already cached
-func ensureKEVData() error {
-	if kevCache != nil {
-		return nil
-	}
-	vulns, err := apiClient.FetchVulnerabilities()
+// getExportDir returns the safe export directory for agent-generated files
+func getExportDir() string {
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return err
+		return "."
 	}
-
-	// Fetch EPSS scores for all CVEs
-	cveIDs := make([]string, len(vulns))
-	for i, v := range vulns {
-		cveIDs[i] = v.CVEID
+	exportDir := filepath.Join(homeDir, ".kevs-tui-exports")
+	if err := os.MkdirAll(exportDir, 0700); err != nil {
+		return "."
 	}
-	epssScores, _ := apiClient.FetchEPSSScores(cveIDs) // Ignore errors, EPSS is optional
+	return exportDir
+}
 
-	// Merge EPSS into vulnerabilities
-	for i := range vulns {
-		if score, ok := epssScores[vulns[i].CVEID]; ok {
-			vulns[i].EPSS = score
+// ensureKEVData fetches KEV data and EPSS scores if not already cached.
+// Uses sync.Once for thread-safe initialization in concurrent server mode.
+func ensureKEVData() error {
+	kevCacheOnce.Do(func() {
+		vulns, err := apiClient.FetchVulnerabilities()
+		if err != nil {
+			kevCacheErr = err
+			return
 		}
-	}
 
-	kevCache = vulns
-	return nil
+		// Fetch EPSS scores for all CVEs
+		cveIDs := make([]string, len(vulns))
+		for i, v := range vulns {
+			cveIDs[i] = v.CVEID
+		}
+		epssScores, _ := apiClient.FetchEPSSScores(cveIDs) // Ignore errors, EPSS is optional
+
+		// Merge EPSS into vulnerabilities
+		for i := range vulns {
+			if score, ok := epssScores[vulns[i].CVEID]; ok {
+				vulns[i].EPSS = score
+			}
+		}
+
+		kevCache = vulns
+	})
+	return kevCacheErr
 }
 
 // --- Tool Input/Output Types ---
@@ -437,11 +455,8 @@ func exportReport(ctx tool.Context, params ExportParams) (ExportResult, error) {
 		vulns = filtered
 	}
 
-	// Get output directory (current working directory)
-	outputDir, err := os.Getwd()
-	if err != nil {
-		return ExportResult{Success: false, Error: err.Error()}, nil
-	}
+	// Use safe export directory (not current working directory)
+	outputDir := getExportDir()
 
 	result := tui.Export(vulns, format, outputDir)
 	if result.Err != nil {

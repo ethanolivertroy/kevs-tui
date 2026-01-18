@@ -10,7 +10,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/ollama/ollama v0.14.0
 	google.golang.org/adk v0.3.0
-	google.golang.org/genai v1.40.0
+	google.golang.org/genai v1.42.0
 )
 
 require (

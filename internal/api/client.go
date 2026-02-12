@@ -155,6 +155,9 @@ func (c *Client) FetchEPSSScores(cveIDs []string) (map[string]model.EPSSScore, e
 // FetchCVSS fetches CVSS scores from NVD for a single CVE.
 // Results are cached per CVE ID with a 1-hour TTL.
 func (c *Client) FetchCVSS(cveID string) (model.CVSSScore, error) {
+	// Normalize CVE ID for consistent cache keys
+	cveID = strings.ToUpper(strings.TrimSpace(cveID))
+
 	// Check cache
 	cvssCacheMu.RLock()
 	if entry, ok := cvssCacheEntries[cveID]; ok && time.Since(entry.fetchedAt) < cvssCacheTTL {

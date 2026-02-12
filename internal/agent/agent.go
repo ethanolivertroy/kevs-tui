@@ -21,7 +21,7 @@ type EventKind int
 const (
 	EventText      EventKind = iota // Streaming text chunk
 	EventToolStart                  // Tool call starting (name + params)
-	EventToolDone                   // Tool call completed (name + result summary)
+	EventToolDone                   // Tool call completed
 	EventDone                       // Turn complete
 	EventError                      // Error occurred
 )
@@ -319,6 +319,7 @@ func (a *KEVAgent) ChatStream(ctx context.Context, query string, events chan<- A
 			SessionID: fmt.Sprintf("chat-%d", time.Now().UnixNano()),
 		})
 		if err != nil {
+			a.mu.Unlock()
 			events <- AgentEvent{Kind: EventError, Err: fmt.Errorf("failed to create session: %w", err)}
 			return
 		}

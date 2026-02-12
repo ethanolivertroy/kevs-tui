@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -85,7 +86,7 @@ type Model struct {
 	currentCVE      *model.VulnerabilityItem // Currently viewed CVE from TUI for context
 	glamourRenderer *glamour.TermRenderer    // Cached markdown renderer
 	// Streaming state
-	streamBuf   strings.Builder       // Accumulates text during streaming
+	streamBuf   string                // Accumulates text during streaming (plain string, safe for Bubble Tea copies)
 	streamTools []streamToolStatus    // Tool calls observed during this turn
 	eventChan   chan agent.AgentEvent // Channel for receiving streaming events
 
@@ -300,7 +301,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Set thinking state and launch streaming
 			m.thinking = true
-			m.streamBuf.Reset()
+			m.streamBuf = ""
 			m.streamTools = nil
 
 			enrichedQuery := buildEnrichedQuery(m.currentCVE, input)
@@ -371,7 +372,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case StreamChunkMsg:
-		m.streamBuf.WriteString(msg.Text)
+		m.streamBuf += msg.Text
 		m.updateViewportContent()
 		m.viewport.GotoBottom()
 		return m, m.waitForEvent()
@@ -418,7 +419,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 		}
 
-		if text := m.streamBuf.String(); text != "" {
+		if text := m.streamBuf; text != "" {
 			m.messages = append(m.messages, ChatMessage{
 				Role:      RoleAgent,
 				Content:   text,
@@ -426,7 +427,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 		}
 
-		m.streamBuf.Reset()
+		m.streamBuf = ""
 		m.streamTools = nil
 		m.updateViewportContent()
 		m.viewport.GotoBottom()
@@ -435,7 +436,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case StreamErrorMsg:
 		m.thinking = false
 		m.eventChan = nil
-		m.streamBuf.Reset()
+		m.streamBuf = ""
 		m.streamTools = nil
 
 		m.messages = append(m.messages, ChatMessage{
@@ -539,24 +540,27 @@ func (m Model) waitForEvent() tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		ev, ok := <-ch
-		if !ok {
-			// Channel closed without EventDone
-			return StreamDoneMsg{}
-		}
-		switch ev.Kind {
-		case agent.EventText:
-			return StreamChunkMsg{Text: ev.Text}
-		case agent.EventToolStart:
-			return ToolCallMsg{ToolName: ev.ToolName, Params: ev.Params, Done: false}
-		case agent.EventToolDone:
-			return ToolCallMsg{ToolName: ev.ToolName, Done: true}
-		case agent.EventDone:
-			return StreamDoneMsg{}
-		case agent.EventError:
-			return StreamErrorMsg{Err: ev.Err}
-		default:
-			return StreamDoneMsg{}
+		for {
+			ev, ok := <-ch
+			if !ok {
+				// Channel closed without EventDone
+				return StreamDoneMsg{}
+			}
+			switch ev.Kind {
+			case agent.EventText:
+				return StreamChunkMsg{Text: ev.Text}
+			case agent.EventToolStart:
+				return ToolCallMsg{ToolName: ev.ToolName, Params: ev.Params, Done: false}
+			case agent.EventToolDone:
+				return ToolCallMsg{ToolName: ev.ToolName, Done: true}
+			case agent.EventDone:
+				return StreamDoneMsg{}
+			case agent.EventError:
+				return StreamErrorMsg{Err: ev.Err}
+			default:
+				// Unknown event kind — skip and wait for next event
+				continue
+			}
 		}
 	}
 }
@@ -665,7 +669,7 @@ func (m Model) View() string {
 		switch {
 		case activeCount > 0:
 			b.WriteString(footerStyle.Render(fmt.Sprintf("  %s Running %d tool(s)...", m.spinner.View(), activeCount)))
-		case m.streamBuf.Len() > 0:
+		case len(m.streamBuf) > 0:
 			b.WriteString(footerStyle.Render("  " + m.spinner.View() + " KEVin is responding..."))
 		default:
 			b.WriteString(footerStyle.Render("  " + m.spinner.View() + " KEVin is thinking..."))
@@ -688,7 +692,7 @@ func (m *Model) updateViewportContent() {
 
 	// Show live streaming content during agent turn
 	if m.thinking {
-		hasStreamContent := len(m.streamTools) > 0 || m.streamBuf.Len() > 0
+		hasStreamContent := len(m.streamTools) > 0 || len(m.streamBuf) > 0
 
 		// Show tool call status lines
 		for _, t := range m.streamTools {
@@ -701,13 +705,13 @@ func (m *Model) updateViewportContent() {
 		}
 
 		// Show streaming text buffer
-		if m.streamBuf.Len() > 0 {
+		if len(m.streamBuf) > 0 {
 			if len(m.streamTools) > 0 {
 				content.WriteString("\n")
 			}
 			content.WriteString(agentLabelStyle.Render("KEVin:"))
 			content.WriteString("\n")
-			rendered := m.renderMarkdown(m.streamBuf.String())
+			rendered := m.renderMarkdown(m.streamBuf)
 			content.WriteString(rendered)
 			content.WriteString("\n")
 		}
@@ -765,14 +769,20 @@ func (m Model) renderMessage(msg ChatMessage) string {
 	return b.String()
 }
 
-// formatToolCall formats a tool call for display, showing name and key params
+// formatToolCall formats a tool call for display, showing name and key params.
+// Keys are sorted for stable display across re-renders.
 func formatToolCall(t streamToolStatus) string {
 	if len(t.Params) == 0 {
 		return t.Name + "()"
 	}
+	keys := make([]string, 0, len(t.Params))
+	for k := range t.Params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 	var parts []string
-	for k, v := range t.Params {
-		parts = append(parts, fmt.Sprintf("%s=%q", k, fmt.Sprint(v)))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%q", k, fmt.Sprint(t.Params[k])))
 	}
 	return fmt.Sprintf("%s(%s)", t.Name, strings.Join(parts, ", "))
 }

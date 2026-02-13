@@ -139,7 +139,7 @@ func (m *OpenRouterModel) GenerateContent(ctx context.Context, req *model.LLMReq
 			yield(nil, fmt.Errorf("OpenRouter request failed: %w", err))
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)

@@ -11,9 +11,8 @@ import (
 
 // Colors (matching tui/styles.go)
 var (
-	primaryColor   = lipgloss.Color("#7D56F4")
-	secondaryColor = lipgloss.Color("#04B575")
-	subtleColor    = lipgloss.Color("#626262")
+	primaryColor = lipgloss.Color("#7D56F4")
+	subtleColor  = lipgloss.Color("#626262")
 )
 
 // Styles for the palette (Crush-style)

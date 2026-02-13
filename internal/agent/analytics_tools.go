@@ -496,7 +496,6 @@ func batchAnalyze(ctx tool.Context, params BatchAnalyzeParams) (BatchAnalyzeResu
 
 	var analyses []BatchCVEAnalysis
 	var notFound []string
-	var invalidIDs []string
 	vendorCount := make(map[string]int)
 	cweCount := make(map[string]int)
 	var totalEPSS, maxEPSS float64
@@ -506,7 +505,11 @@ func batchAnalyze(ctx tool.Context, params BatchAnalyzeParams) (BatchAnalyzeResu
 	for _, rawCVEID := range params.CVEIDs {
 		cveID, err := validateCVEID(rawCVEID)
 		if err != nil {
-			invalidIDs = append(invalidIDs, rawCVEID)
+			notFound = append(notFound, rawCVEID)
+			analyses = append(analyses, BatchCVEAnalysis{
+				CVEID: rawCVEID,
+				Found: false,
+			})
 			continue
 		}
 

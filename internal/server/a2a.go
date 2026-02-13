@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/ethanolivertroy/kevs-tui/internal/agent"
 	"github.com/ethanolivertroy/kevs-tui/internal/llm"
@@ -97,9 +98,8 @@ func GetPort() int {
 	if portStr == "" {
 		return 8001
 	}
-	var port int
-	fmt.Sscanf(portStr, "%d", &port)
-	if port <= 0 {
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port <= 0 {
 		return 8001
 	}
 	return port

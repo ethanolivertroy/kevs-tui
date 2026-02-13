@@ -28,7 +28,7 @@ var cvssCacheMu sync.RWMutex
 var cvssCacheEntries = make(map[string]cvssCacheEntry)
 
 type cvssCacheEntry struct {
-	score     model.CVSSScore
+	data      model.CVSSData
 	fetchedAt time.Time
 }
 
@@ -153,18 +153,8 @@ func (c *Client) FetchEPSSScores(cveIDs []string) (map[string]model.EPSSScore, e
 }
 
 // FetchCVSS fetches CVSS scores from NVD for a single CVE.
-// Results are cached per CVE ID with a 1-hour TTL.
 func (c *Client) FetchCVSS(cveID string) (model.CVSSScore, error) {
-	// Normalize CVE ID for consistent cache keys
 	cveID = strings.ToUpper(strings.TrimSpace(cveID))
-
-	// Check cache
-	cvssCacheMu.RLock()
-	if entry, ok := cvssCacheEntries[cveID]; ok && time.Since(entry.fetchedAt) < cvssCacheTTL {
-		cvssCacheMu.RUnlock()
-		return entry.score, nil
-	}
-	cvssCacheMu.RUnlock()
 
 	url := fmt.Sprintf("%s?cveId=%s", nvdURL, cveID)
 	resp, err := c.rateLimitedGet(url)
@@ -231,16 +221,22 @@ func (c *Client) FetchCVSS(cveID string) (model.CVSSScore, error) {
 		return model.CVSSScore{}, fmt.Errorf("no CVSS data available")
 	}
 
-	// Store in cache
-	cvssCacheMu.Lock()
-	cvssCacheEntries[cveID] = cvssCacheEntry{score: score, fetchedAt: time.Now()}
-	cvssCacheMu.Unlock()
-
 	return score, nil
 }
 
-// FetchCVSSAll fetches all CVSS assessments (NVD + CNA) from NVD for a single CVE
+// FetchCVSSAll fetches all CVSS assessments (NVD + CNA) from NVD for a single CVE.
+// Results are cached per CVE ID with a 1-hour TTL.
 func (c *Client) FetchCVSSAll(cveID string) (model.CVSSData, error) {
+	cveID = strings.ToUpper(strings.TrimSpace(cveID))
+
+	// Check cache
+	cvssCacheMu.RLock()
+	if entry, ok := cvssCacheEntries[cveID]; ok && time.Since(entry.fetchedAt) < cvssCacheTTL {
+		cvssCacheMu.RUnlock()
+		return entry.data, nil
+	}
+	cvssCacheMu.RUnlock()
+
 	url := fmt.Sprintf("%s?cveId=%s", nvdURL, cveID)
 	resp, err := c.rateLimitedGet(url)
 	if err != nil {
@@ -313,6 +309,11 @@ func (c *Client) FetchCVSSAll(cveID string) (model.CVSSData, error) {
 		}
 		result.Primary = &score
 	}
+
+	// Store in cache
+	cvssCacheMu.Lock()
+	cvssCacheEntries[cveID] = cvssCacheEntry{data: result, fetchedAt: time.Now()}
+	cvssCacheMu.Unlock()
 
 	return result, nil
 }

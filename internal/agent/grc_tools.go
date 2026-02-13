@@ -82,11 +82,8 @@ func mapCVEToControls(ctx tool.Context, params MapCVEParams) (MapCVEResult, erro
 	cveID := strings.ToUpper(params.CVEID)
 
 	// Find the vulnerability
-	var found bool
 	for _, v := range kevCache {
 		if v.CVEID == cveID {
-			found = true
-
 			// Handle CIS framework separately
 			if framework == "cis" {
 				cisMapping := grcMapper.MapVulnerabilityToCIS(v)
@@ -139,16 +136,12 @@ func mapCVEToControls(ctx tool.Context, params MapCVEParams) (MapCVEResult, erro
 		}
 	}
 
-	if !found {
-		return MapCVEResult{
-			CVEID:     cveID,
-			Framework: framework,
-			Rationale: "CVE not found in KEV catalog",
-			Found:     false,
-		}, nil
-	}
-
-	return MapCVEResult{}, nil
+	return MapCVEResult{
+		CVEID:     cveID,
+		Framework: framework,
+		Rationale: "CVE not found in KEV catalog",
+		Found:     false,
+	}, nil
 }
 
 func getControlDetails(ctx tool.Context, params GetControlParams) (GetControlResult, error) {

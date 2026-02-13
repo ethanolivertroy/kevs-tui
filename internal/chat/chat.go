@@ -228,7 +228,6 @@ Commands: /help /clear /exit`,
 
 	// Create viewport upfront so TUI renders immediately
 	vp := viewport.New(defaultWidth-4, viewportHeight)
-	vp.HighPerformanceRendering = false
 
 	// Create glamour renderer for markdown (cached for performance)
 	glamourRenderer, _ := glamour.NewTermRenderer(
@@ -855,49 +854,6 @@ func wrapText(text string, width int) string {
 	}
 
 	return result.String()
-}
-
-// handlePaletteAction handles actions from the command palette
-func (m Model) handlePaletteAction(action string) (tea.Model, tea.Cmd) {
-	switch action {
-	case "clear":
-		m.agent.ClearSession()
-		m.messages = []ChatMessage{{
-			Role:      RoleSystem,
-			Content:   "Conversation cleared. Starting fresh.",
-			Timestamp: time.Now(),
-		}}
-		m.updateViewportContent()
-		return m, nil
-	case "help":
-		helpText := `Commands:
-  /help, /?    Show this help message
-  /clear       Clear conversation and start fresh
-  /exit, /q    Exit the agent
-
-Query Examples:
-  "search for Apache vulnerabilities"
-  "show CVEs with ransomware use"
-  "what are the overdue CVEs?"
-  "get details for CVE-2024-0001"
-  "export all to JSON"
-  "show KEV statistics"
-
-Navigation:
-  PgUp/PgDn    Scroll conversation history
-  Ctrl+C       Quit`
-		m.messages = append(m.messages, ChatMessage{
-			Role:      RoleSystem,
-			Content:   helpText,
-			Timestamp: time.Now(),
-		})
-		m.updateViewportContent()
-		m.viewport.GotoBottom()
-		return m, nil
-	case "exit":
-		return m, tea.Quit
-	}
-	return m, nil
 }
 
 // screenToContent converts screen coordinates to content line/column

@@ -37,7 +37,6 @@ const (
 // Colors
 var (
 	primaryColor    = lipgloss.Color("#7D56F4")
-	secondaryColor  = lipgloss.Color("#04B575")
 	subtleColor     = lipgloss.Color("#626262")
 	borderFocused   = lipgloss.Color("#7D56F4")
 	borderUnfocused = lipgloss.Color("#3a3a3a")
@@ -441,7 +440,10 @@ func main() {
 		serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
 		port := serveCmd.Int("port", 8001, "Port for A2A server")
 		host := serveCmd.String("host", "127.0.0.1", "Host to bind (use 0.0.0.0 for all interfaces - INSECURE)")
-		serveCmd.Parse(os.Args[2:])
+		if err := serveCmd.Parse(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
+			os.Exit(1)
+		}
 
 		if err := cmd.RunServe(*port, *host); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -441,6 +442,9 @@ func main() {
 		port := serveCmd.Int("port", 8001, "Port for A2A server")
 		host := serveCmd.String("host", "127.0.0.1", "Host to bind (use 0.0.0.0 for all interfaces - INSECURE)")
 		if err := serveCmd.Parse(os.Args[2:]); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				os.Exit(0)
+			}
 			fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
 			os.Exit(1)
 		}

@@ -12,11 +12,13 @@ import (
 	"github.com/ethanolivertroy/kevs-tui/internal/model"
 )
 
-const (
+var (
 	kevURL  = "https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json"
 	epssURL = "https://api.first.org/data/v1/epss"
 	nvdURL  = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+)
 
+const (
 	// minRequestInterval limits API requests to 10/sec max to avoid rate limiting
 	minRequestInterval = 100 * time.Millisecond
 )
@@ -46,6 +48,11 @@ func NewClient() *Client {
 			Timeout: 60 * time.Second,
 		},
 	}
+}
+
+// NewClientWithHTTPClient creates a new API client with a custom HTTP client.
+func NewClientWithHTTPClient(httpClient *http.Client) *Client {
+	return &Client{httpClient: httpClient}
 }
 
 // rateLimitedGet performs a rate-limited HTTP GET request

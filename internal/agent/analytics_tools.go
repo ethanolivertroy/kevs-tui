@@ -505,6 +505,11 @@ func batchAnalyze(ctx tool.Context, params BatchAnalyzeParams) (BatchAnalyzeResu
 	for _, rawCVEID := range params.CVEIDs {
 		cveID, err := validateCVEID(rawCVEID)
 		if err != nil {
+			notFound = append(notFound, rawCVEID)
+			analyses = append(analyses, BatchCVEAnalysis{
+				CVEID: rawCVEID,
+				Found: false,
+			})
 			continue
 		}
 

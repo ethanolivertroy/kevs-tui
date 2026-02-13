@@ -437,7 +437,7 @@ func main() {
 	switch os.Args[1] {
 	case "serve":
 		// Parse serve-specific flags
-		serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
+		serveCmd := flag.NewFlagSet("serve", flag.ContinueOnError)
 		port := serveCmd.Int("port", 8001, "Port for A2A server")
 		host := serveCmd.String("host", "127.0.0.1", "Host to bind (use 0.0.0.0 for all interfaces - INSECURE)")
 		if err := serveCmd.Parse(os.Args[2:]); err != nil {

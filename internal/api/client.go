@@ -21,6 +21,17 @@ const (
 	minRequestInterval = 100 * time.Millisecond
 )
 
+const cvssCacheTTL = 1 * time.Hour
+
+// cvssCache provides per-CVE TTL caching for CVSS lookups
+var cvssCacheMu sync.RWMutex
+var cvssCacheEntries = make(map[string]cvssCacheEntry)
+
+type cvssCacheEntry struct {
+	data      model.CVSSData
+	fetchedAt time.Time
+}
+
 // Client handles API requests to the KEV data source
 type Client struct {
 	httpClient  *http.Client
@@ -141,8 +152,10 @@ func (c *Client) FetchEPSSScores(cveIDs []string) (map[string]model.EPSSScore, e
 	return scores, nil
 }
 
-// FetchCVSS fetches CVSS scores from NVD for a single CVE
+// FetchCVSS fetches CVSS scores from NVD for a single CVE.
 func (c *Client) FetchCVSS(cveID string) (model.CVSSScore, error) {
+	cveID = strings.ToUpper(strings.TrimSpace(cveID))
+
 	url := fmt.Sprintf("%s?cveId=%s", nvdURL, cveID)
 	resp, err := c.rateLimitedGet(url)
 	if err != nil {
@@ -165,48 +178,65 @@ func (c *Client) FetchCVSS(cveID string) (model.CVSSScore, error) {
 
 	metrics := nvdResp.Vulnerabilities[0].CVE.Metrics
 
+	var score model.CVSSScore
+	var found bool
+
 	// Prefer CVSS v3.1, then v3.0, then v2.0
 	if len(metrics.CVSSMetricV31) > 0 {
 		metric := metrics.CVSSMetricV31[0]
-		return model.CVSSScore{
+		score = model.CVSSScore{
 			Version:  metric.CVSSData.Version,
 			Score:    metric.CVSSData.BaseScore,
 			Severity: metric.CVSSData.BaseSeverity,
 			Vector:   metric.CVSSData.VectorString,
 			Source:   metric.Source,
 			Type:     metric.Type,
-		}, nil
-	}
-
-	if len(metrics.CVSSMetricV30) > 0 {
+		}
+		found = true
+	} else if len(metrics.CVSSMetricV30) > 0 {
 		metric := metrics.CVSSMetricV30[0]
-		return model.CVSSScore{
+		score = model.CVSSScore{
 			Version:  metric.CVSSData.Version,
 			Score:    metric.CVSSData.BaseScore,
 			Severity: metric.CVSSData.BaseSeverity,
 			Vector:   metric.CVSSData.VectorString,
 			Source:   metric.Source,
 			Type:     metric.Type,
-		}, nil
-	}
-
-	if len(metrics.CVSSMetricV2) > 0 {
+		}
+		found = true
+	} else if len(metrics.CVSSMetricV2) > 0 {
 		metric := metrics.CVSSMetricV2[0]
-		return model.CVSSScore{
+		score = model.CVSSScore{
 			Version:  metric.CVSSData.Version,
 			Score:    metric.CVSSData.BaseScore,
 			Severity: metric.BaseSeverity,
 			Vector:   metric.CVSSData.VectorString,
 			Source:   metric.Source,
 			Type:     metric.Type,
-		}, nil
+		}
+		found = true
 	}
 
-	return model.CVSSScore{}, fmt.Errorf("no CVSS data available")
+	if !found {
+		return model.CVSSScore{}, fmt.Errorf("no CVSS data available")
+	}
+
+	return score, nil
 }
 
-// FetchCVSSAll fetches all CVSS assessments (NVD + CNA) from NVD for a single CVE
+// FetchCVSSAll fetches all CVSS assessments (NVD + CNA) from NVD for a single CVE.
+// Results are cached per CVE ID with a 1-hour TTL.
 func (c *Client) FetchCVSSAll(cveID string) (model.CVSSData, error) {
+	cveID = strings.ToUpper(strings.TrimSpace(cveID))
+
+	// Check cache
+	cvssCacheMu.RLock()
+	if entry, ok := cvssCacheEntries[cveID]; ok && time.Since(entry.fetchedAt) < cvssCacheTTL {
+		cvssCacheMu.RUnlock()
+		return entry.data, nil
+	}
+	cvssCacheMu.RUnlock()
+
 	url := fmt.Sprintf("%s?cveId=%s", nvdURL, cveID)
 	resp, err := c.rateLimitedGet(url)
 	if err != nil {
@@ -279,6 +309,11 @@ func (c *Client) FetchCVSSAll(cveID string) (model.CVSSData, error) {
 		}
 		result.Primary = &score
 	}
+
+	// Store in cache
+	cvssCacheMu.Lock()
+	cvssCacheEntries[cveID] = cvssCacheEntry{data: result, fetchedAt: time.Now()}
+	cvssCacheMu.Unlock()
 
 	return result, nil
 }

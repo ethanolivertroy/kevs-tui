@@ -265,6 +265,16 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m, nil
+
+	case chat.StreamChunkMsg, chat.ToolCallMsg, chat.StreamDoneMsg, chat.StreamErrorMsg:
+		// Always route streaming events to chat model regardless of focus
+		// Same rationale as AgentResponseMsg — prevents lost events during panel switch
+		if m.agentModel != nil {
+			var cmd tea.Cmd
+			m.agentModel, cmd = m.agentModel.Update(msg)
+			return m, cmd
+		}
+		return m, nil
 	}
 
 	// Route other messages to focused panel only (prevents flickering from spinner ticks)

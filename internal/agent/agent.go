@@ -15,6 +15,27 @@ import (
 	"google.golang.org/genai"
 )
 
+// EventKind categorizes streaming events from the agent.
+type EventKind int
+
+const (
+	EventText      EventKind = iota // Streaming text chunk
+	EventToolStart                  // Tool call starting (name + params)
+	EventToolDone                   // Tool call completed
+	EventDone                       // Turn complete
+	EventError                      // Error occurred
+)
+
+// AgentEvent is a structured event emitted during streaming agent execution.
+// The chat UI consumes these to show real-time tool activity and text.
+type AgentEvent struct {
+	Kind     EventKind
+	Text     string         // For EventText: the text chunk
+	ToolName string         // For EventToolStart/EventToolDone: tool name
+	Params   map[string]any // For EventToolStart: tool arguments
+	Err      error          // For EventError
+}
+
 const (
 	// SystemInstruction for KEVin
 	SystemInstruction = `You are KEVin, a security expert for the CISA Known Exploited Vulnerabilities (KEV) catalog.
@@ -281,6 +302,93 @@ func (a *KEVAgent) Chat(ctx context.Context, query string) (string, error) {
 	}
 
 	return response.String(), nil
+}
+
+// ChatStream sends a query using a persistent session and emits structured events
+// for real-time UI updates. The events channel is closed when the turn completes.
+// Callers should range over the channel until it closes.
+func (a *KEVAgent) ChatStream(ctx context.Context, query string, events chan<- AgentEvent) {
+	defer close(events)
+
+	// Ensure session exists (same logic as Chat)
+	a.mu.Lock()
+	if !a.hasSession {
+		sessionResp, err := a.sessionService.Create(ctx, &session.CreateRequest{
+			AppName:   "kevs-tui",
+			UserID:    "chat-user",
+			SessionID: fmt.Sprintf("chat-%d", time.Now().UnixNano()),
+		})
+		if err != nil {
+			a.mu.Unlock()
+			events <- AgentEvent{Kind: EventError, Err: fmt.Errorf("failed to create session: %w", err)}
+			return
+		}
+		a.userID = sessionResp.Session.UserID()
+		a.sessionID = sessionResp.Session.ID()
+		a.hasSession = true
+	}
+	userID := a.userID
+	sessionID := a.sessionID
+	a.mu.Unlock()
+
+	userMsg := &genai.Content{
+		Role: "user",
+		Parts: []*genai.Part{
+			genai.NewPartFromText(query),
+		},
+	}
+
+	// Run with SSE streaming to get partial text and tool call events
+	for event, err := range a.runner.Run(ctx, userID, sessionID, userMsg, agent.RunConfig{
+		StreamingMode: agent.StreamingModeSSE,
+	}) {
+		if err != nil {
+			events <- AgentEvent{Kind: EventError, Err: fmt.Errorf("agent error: %w", err)}
+			return
+		}
+
+		if event.Content == nil {
+			continue
+		}
+
+		for _, part := range event.Content.Parts {
+			// Tool call starting
+			if part.FunctionCall != nil {
+				events <- AgentEvent{
+					Kind:     EventToolStart,
+					ToolName: part.FunctionCall.Name,
+					Params:   part.FunctionCall.Args,
+				}
+				continue
+			}
+
+			// Tool call completed
+			if part.FunctionResponse != nil {
+				events <- AgentEvent{
+					Kind:     EventToolDone,
+					ToolName: part.FunctionResponse.Name,
+				}
+				continue
+			}
+
+			// Text content
+			if part.Text != "" {
+				events <- AgentEvent{
+					Kind: EventText,
+					Text: part.Text,
+				}
+			}
+		}
+
+		// Turn complete
+		if event.TurnComplete {
+			events <- AgentEvent{Kind: EventDone}
+			return
+		}
+	}
+
+	// If we exit the loop without TurnComplete, still signal done
+	events <- AgentEvent{Kind: EventDone}
 }
 
 // ClearSession clears the current chat session, starting fresh on next Chat() call.

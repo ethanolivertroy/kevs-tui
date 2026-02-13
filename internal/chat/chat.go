@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -32,6 +33,7 @@ const (
 	RoleUser MessageRole = iota
 	RoleAgent
 	RoleSystem
+	RoleTool // Tool status lines (styled differently)
 )
 
 // ChatMessage represents a single message in the conversation
@@ -42,10 +44,30 @@ type ChatMessage struct {
 	IsError   bool
 }
 
-// AgentResponseMsg is sent when the agent responds
+// AgentResponseMsg is sent when the agent responds (legacy, kept for compatibility)
 type AgentResponseMsg struct {
 	Content string
 	Err     error
+}
+
+// StreamChunkMsg delivers a text chunk during streaming
+type StreamChunkMsg struct {
+	Text string
+}
+
+// ToolCallMsg indicates a tool call starting or completing
+type ToolCallMsg struct {
+	ToolName string
+	Params   map[string]any
+	Done     bool // false=starting, true=completed
+}
+
+// StreamDoneMsg signals the agent turn is complete
+type StreamDoneMsg struct{}
+
+// StreamErrorMsg signals an error during streaming
+type StreamErrorMsg struct {
+	Err error
 }
 
 // Model is the main model for the agent chat TUI
@@ -63,12 +85,24 @@ type Model struct {
 	palette         palette.Model
 	currentCVE      *model.VulnerabilityItem // Currently viewed CVE from TUI for context
 	glamourRenderer *glamour.TermRenderer    // Cached markdown renderer
+	// Streaming state
+	streamBuf   string                // Accumulates text during streaming (plain string, safe for Bubble Tea copies)
+	streamTools []streamToolStatus    // Tool calls observed during this turn
+	eventChan   chan agent.AgentEvent // Channel for receiving streaming events
+
 	// Text selection
 	selecting    bool // Currently dragging to select
 	selStartLine int  // Selection start line in viewport content
 	selStartCol  int  // Selection start column
 	selEndLine   int  // Selection end line
 	selEndCol    int  // Selection end column
+}
+
+// streamToolStatus tracks a tool call's display state
+type streamToolStatus struct {
+	Name   string
+	Params map[string]any
+	Done   bool
 }
 
 // CurrentCVE returns the currently selected CVE for testing/inspection
@@ -132,6 +166,18 @@ var (
 	selectionStyle = lipgloss.NewStyle().
 			Background(lipgloss.Color("#5A4BA3")). // Blue-purple like Claude Code
 			Foreground(lipgloss.Color("#FFFFFF"))
+
+	toolMessageStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#A0A0A0")). // Muted gray
+				MarginLeft(2)
+
+	toolActiveStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFD700")). // Gold for active tools
+			MarginLeft(2)
+
+	toolDoneStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#04B575")). // Green for completed tools
+			MarginLeft(2)
 )
 
 // NewModel creates a new chat model for interactive agent sessions
@@ -253,13 +299,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Timestamp: time.Now(),
 			})
 
-			// Set thinking state and refresh viewport
+			// Set thinking state and launch streaming
 			m.thinking = true
+			m.streamBuf = ""
+			m.streamTools = nil
+
+			enrichedQuery := buildEnrichedQuery(m.currentCVE, input)
+			ch := make(chan agent.AgentEvent, 16)
+			m.eventChan = ch
+			go m.agent.ChatStream(m.ctx, enrichedQuery, ch)
+
 			m.updateViewportContent()
 			m.viewport.GotoBottom()
 
-			// Send to agent asynchronously
-			return m, tea.Batch(m.spinner.Tick, m.sendToAgent(input))
+			return m, tea.Batch(m.spinner.Tick, m.waitForEvent())
 
 		case "esc":
 			m.textInput.Reset()
@@ -296,6 +349,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case AgentResponseMsg:
+		// Legacy handler (used by non-streaming callers)
 		m.thinking = false
 
 		if msg.Err != nil {
@@ -313,6 +367,84 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 		}
 
+		m.updateViewportContent()
+		m.viewport.GotoBottom()
+		return m, nil
+
+	case StreamChunkMsg:
+		m.streamBuf += msg.Text
+		m.updateViewportContent()
+		m.viewport.GotoBottom()
+		return m, m.waitForEvent()
+
+	case ToolCallMsg:
+		if msg.Done {
+			// Mark existing tool as done
+			for i := range m.streamTools {
+				if m.streamTools[i].Name == msg.ToolName && !m.streamTools[i].Done {
+					m.streamTools[i].Done = true
+					break
+				}
+			}
+		} else {
+			// New tool call starting
+			m.streamTools = append(m.streamTools, streamToolStatus{
+				Name:   msg.ToolName,
+				Params: msg.Params,
+				Done:   false,
+			})
+		}
+		m.updateViewportContent()
+		m.viewport.GotoBottom()
+		return m, m.waitForEvent()
+
+	case StreamDoneMsg:
+		m.thinking = false
+		m.eventChan = nil
+
+		// Finalize: add tool status lines and streamed text as messages
+		if len(m.streamTools) > 0 {
+			var toolSummary strings.Builder
+			for _, t := range m.streamTools {
+				if t.Done {
+					toolSummary.WriteString(fmt.Sprintf("  ✓ %s\n", t.Name))
+				} else {
+					toolSummary.WriteString(fmt.Sprintf("  ⚡ %s\n", t.Name))
+				}
+			}
+			m.messages = append(m.messages, ChatMessage{
+				Role:      RoleTool,
+				Content:   strings.TrimRight(toolSummary.String(), "\n"),
+				Timestamp: time.Now(),
+			})
+		}
+
+		if text := m.streamBuf; text != "" {
+			m.messages = append(m.messages, ChatMessage{
+				Role:      RoleAgent,
+				Content:   text,
+				Timestamp: time.Now(),
+			})
+		}
+
+		m.streamBuf = ""
+		m.streamTools = nil
+		m.updateViewportContent()
+		m.viewport.GotoBottom()
+		return m, nil
+
+	case StreamErrorMsg:
+		m.thinking = false
+		m.eventChan = nil
+		m.streamBuf = ""
+		m.streamTools = nil
+
+		m.messages = append(m.messages, ChatMessage{
+			Role:      RoleSystem,
+			Content:   "Error: " + msg.Err.Error(),
+			Timestamp: time.Now(),
+			IsError:   true,
+		})
 		m.updateViewportContent()
 		m.viewport.GotoBottom()
 		return m, nil
@@ -399,15 +531,37 @@ func buildEnrichedQuery(currentCVE *model.VulnerabilityItem, query string) strin
 	)
 }
 
-// sendToAgent sends a query to the agent asynchronously
-func (m Model) sendToAgent(query string) tea.Cmd {
-	// Capture currentCVE for the closure
-	currentCVE := m.currentCVE
-
+// waitForEvent returns a tea.Cmd that blocks on the event channel and
+// converts the next AgentEvent into the appropriate tea.Msg.
+// Each streaming msg handler re-calls this to pump the next event.
+func (m Model) waitForEvent() tea.Cmd {
+	ch := m.eventChan
+	if ch == nil {
+		return nil
+	}
 	return func() tea.Msg {
-		enrichedQuery := buildEnrichedQuery(currentCVE, query)
-		response, err := m.agent.Chat(m.ctx, enrichedQuery)
-		return AgentResponseMsg{Content: response, Err: err}
+		for {
+			ev, ok := <-ch
+			if !ok {
+				// Channel closed without EventDone
+				return StreamDoneMsg{}
+			}
+			switch ev.Kind {
+			case agent.EventText:
+				return StreamChunkMsg{Text: ev.Text}
+			case agent.EventToolStart:
+				return ToolCallMsg{ToolName: ev.ToolName, Params: ev.Params, Done: false}
+			case agent.EventToolDone:
+				return ToolCallMsg{ToolName: ev.ToolName, Done: true}
+			case agent.EventDone:
+				return StreamDoneMsg{}
+			case agent.EventError:
+				return StreamErrorMsg{Err: ev.Err}
+			default:
+				// Unknown event kind — skip and wait for next event
+				continue
+			}
+		}
 	}
 }
 
@@ -505,7 +659,21 @@ func (m Model) View() string {
 
 	// Help footer
 	if m.thinking {
-		b.WriteString(footerStyle.Render("  " + m.spinner.View() + " KEVin is thinking..."))
+		// Show what KEVin is doing based on streaming state
+		activeCount := 0
+		for _, t := range m.streamTools {
+			if !t.Done {
+				activeCount++
+			}
+		}
+		switch {
+		case activeCount > 0:
+			b.WriteString(footerStyle.Render(fmt.Sprintf("  %s Running %d tool(s)...", m.spinner.View(), activeCount)))
+		case len(m.streamBuf) > 0:
+			b.WriteString(footerStyle.Render("  " + m.spinner.View() + " KEVin is responding..."))
+		default:
+			b.WriteString(footerStyle.Render("  " + m.spinner.View() + " KEVin is thinking..."))
+		}
 	} else {
 		b.WriteString(footerStyle.Render("  PgUp/Dn scroll  |  /help /clear /exit"))
 	}
@@ -522,14 +690,41 @@ func (m *Model) updateViewportContent() {
 		content.WriteString("\n\n")
 	}
 
-	// Show thinking indicator at bottom
+	// Show live streaming content during agent turn
 	if m.thinking {
-		thinkingStyle := lipgloss.NewStyle().
-			Foreground(secondaryColor).
-			Italic(true).
-			MarginLeft(2)
-		content.WriteString(thinkingStyle.Render(m.spinner.View() + " KEVin is thinking..."))
-		content.WriteString("\n")
+		hasStreamContent := len(m.streamTools) > 0 || len(m.streamBuf) > 0
+
+		// Show tool call status lines
+		for _, t := range m.streamTools {
+			if t.Done {
+				content.WriteString(toolDoneStyle.Render("✓ " + t.Name))
+			} else {
+				content.WriteString(toolActiveStyle.Render(m.spinner.View() + " " + formatToolCall(t)))
+			}
+			content.WriteString("\n")
+		}
+
+		// Show streaming text buffer
+		if len(m.streamBuf) > 0 {
+			if len(m.streamTools) > 0 {
+				content.WriteString("\n")
+			}
+			content.WriteString(agentLabelStyle.Render("KEVin:"))
+			content.WriteString("\n")
+			rendered := m.renderMarkdown(m.streamBuf)
+			content.WriteString(rendered)
+			content.WriteString("\n")
+		}
+
+		// Show spinner only if no streaming content yet
+		if !hasStreamContent {
+			thinkingStyle := lipgloss.NewStyle().
+				Foreground(secondaryColor).
+				Italic(true).
+				MarginLeft(2)
+			content.WriteString(thinkingStyle.Render(m.spinner.View() + " KEVin is thinking..."))
+			content.WriteString("\n")
+		}
 	}
 
 	// Apply selection highlighting to final content
@@ -560,6 +755,9 @@ func (m Model) renderMessage(msg ChatMessage) string {
 		rendered := m.renderMarkdown(msg.Content)
 		b.WriteString(rendered)
 
+	case RoleTool:
+		b.WriteString(toolMessageStyle.Render(msg.Content))
+
 	case RoleSystem:
 		if msg.IsError {
 			b.WriteString(errorMessageStyle.Render(msg.Content))
@@ -569,6 +767,24 @@ func (m Model) renderMessage(msg ChatMessage) string {
 	}
 
 	return b.String()
+}
+
+// formatToolCall formats a tool call for display, showing name and key params.
+// Keys are sorted for stable display across re-renders.
+func formatToolCall(t streamToolStatus) string {
+	if len(t.Params) == 0 {
+		return t.Name + "()"
+	}
+	keys := make([]string, 0, len(t.Params))
+	for k := range t.Params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var parts []string
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%q", k, fmt.Sprint(t.Params[k])))
+	}
+	return fmt.Sprintf("%s(%s)", t.Name, strings.Join(parts, ", "))
 }
 
 // renderMarkdown renders markdown content using cached glamour renderer

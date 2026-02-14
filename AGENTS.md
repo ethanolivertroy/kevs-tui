@@ -27,7 +27,7 @@ go test -coverprofile=coverage.out -covermode=atomic ./...  # With coverage
 
 ### Linting
 ```bash
-golangci-lint run                 # Run linters (v2.7.2)
+golangci-lint run                 # Run linters (v2.9.0)
 ```
 
 ### Running
@@ -217,7 +217,7 @@ Place tests next to the code they test:
 
 ## Linting Configuration
 
-Uses `golangci-lint` v2.7.2 with these enabled linters:
+Uses `golangci-lint` v2.9.0 with these enabled linters:
 - `bodyclose`: Ensure HTTP response bodies are closed
 - `errcheck`: Check for unchecked errors
 - `gosec`: Security checks

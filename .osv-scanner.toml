@@ -1,0 +1,39 @@
+# OSV Scanner configuration
+# Ignore ollama CVEs that have no upstream fix available yet.
+# These should be reviewed and removed once ollama releases a patched version.
+
+[[IgnoredVulns]]
+id = "GO-2025-3548"
+reason = "No fix available upstream for github.com/ollama/ollama"
+
+[[IgnoredVulns]]
+id = "GO-2025-3557"
+reason = "No fix available upstream for github.com/ollama/ollama"
+
+[[IgnoredVulns]]
+id = "GO-2025-3558"
+reason = "No fix available upstream for github.com/ollama/ollama"
+
+[[IgnoredVulns]]
+id = "GO-2025-3559"
+reason = "No fix available upstream for github.com/ollama/ollama"
+
+[[IgnoredVulns]]
+id = "GO-2025-3582"
+reason = "No fix available upstream for github.com/ollama/ollama"
+
+[[IgnoredVulns]]
+id = "GO-2025-3689"
+reason = "No fix available upstream for github.com/ollama/ollama"
+
+[[IgnoredVulns]]
+id = "GO-2025-3695"
+reason = "No fix available upstream for github.com/ollama/ollama"
+
+[[IgnoredVulns]]
+id = "GO-2025-3824"
+reason = "No fix available upstream for github.com/ollama/ollama"
+
+[[IgnoredVulns]]
+id = "GO-2025-4251"
+reason = "No fix available upstream for github.com/ollama/ollama"

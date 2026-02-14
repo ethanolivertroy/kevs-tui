@@ -1,6 +1,6 @@
 # CISA KEV TUI
 
-![Go Version](https://img.shields.io/badge/go-1.25.5-blue.svg)
+![Go Version](https://img.shields.io/badge/go-1.26.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Go Report Card](https://goreportcard.com/badge/github.com/ethanolivertroy/kevs-tui)
 ![GitHub Release](https://img.shields.io/github/release/ethanolivertroy/kevs-tui.svg)

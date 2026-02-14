@@ -6,7 +6,7 @@ This guide helps AI agents work effectively in this repository.
 
 **kevs-tui** is a Terminal UI (TUI) application for browsing CISA Known Exploited Vulnerabilities (KEV) catalog with an integrated AI assistant (KEVin).
 
-- **Language**: Go 1.25.5
+- **Language**: Go 1.26.0
 - **Module**: `github.com/ethanolivertroy/kevs-tui`
 - **Main Framework**: Bubble Tea (TUI), Google ADK (Agent)
 - **Purpose**: Interactive security vulnerability browser with AI-powered analysis
@@ -27,7 +27,7 @@ go test -coverprofile=coverage.out -covermode=atomic ./...  # With coverage
 
 ### Linting
 ```bash
-golangci-lint run                 # Run linters (v2.4)
+golangci-lint run                 # Run linters (v2.7.2)
 ```
 
 ### Running
@@ -217,7 +217,7 @@ Place tests next to the code they test:
 
 ## Linting Configuration
 
-Uses `golangci-lint` v2.4 with these enabled linters:
+Uses `golangci-lint` v2.7.2 with these enabled linters:
 - `bodyclose`: Ensure HTTP response bodies are closed
 - `errcheck`: Check for unchecked errors
 - `gosec`: Security checks

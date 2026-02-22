@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
-	github.com/ollama/ollama v0.16.1
+	github.com/ollama/ollama v0.16.3
 	google.golang.org/adk v0.5.0
 	google.golang.org/genai v1.46.0
 )

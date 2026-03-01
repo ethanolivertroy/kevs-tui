@@ -27,7 +27,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y msitools wixl
 
       - name: Install Syft for SBOM
-        uses: anchore/sbom-action/download-syft@28d71544de8eaf1b958d335707167c5f783590ad # v0.22.2
+        uses: anchore/sbom-action/download-syft@17ae1740179002c89186b61233e0f892c3118b11 # v0.23.0
 
       - name: Run GoReleaser Pro
         uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 # v7.0.0

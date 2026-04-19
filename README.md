@@ -1,5 +1,16 @@
 # CISA KEV TUI
 
+> [!IMPORTANT]
+> This project is now superseded by the Pi-native **KEVin Pi** package at `/Users/ethantroy/Git/Github/kevin-pi` and is being prepared for archival.
+>
+> New work will continue in `kevin-pi` as a Pi extension + skill package.
+>
+> Install the replacement with:
+>
+> ```bash
+> pi install /Users/ethantroy/Git/Github/kevin-pi
+> ```
+
 ![Go Version](https://img.shields.io/badge/go-1.26.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Go Report Card](https://goreportcard.com/badge/github.com/ethanolivertroy/kevs-tui)
@@ -10,9 +21,20 @@
 
 Terminal UI for searching CISA Known Exploited Vulnerabilities (KEV) catalog with EPSS exploit probability scores and an integrated AI agent for security analysis.
 
+This repository is retained as the original Go/Bubble Tea implementation. The actively maintained successor is the Pi-native `kevin-pi` package.
+
 ![Demo](demo.gif)
 
 ## Install
+
+For new usage, prefer the Pi-native successor:
+
+```bash
+pi install /Users/ethantroy/Git/Github/kevin-pi
+```
+
+The legacy Go install instructions remain below for historical/reference purposes.
+
 
 ### Go Install
 
